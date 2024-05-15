@@ -8,3 +8,6 @@ add_executable(WaveSequential src/WaveSerial.cpp src/TestSerial.cpp)
 
 deal_ii_setup_target(WaveSequential)
 
+add_executable(WaveParallel src/WaveParallel.cpp src/TestParallel.cpp)
+
+deal_ii_setup_target(WaveParallel)
