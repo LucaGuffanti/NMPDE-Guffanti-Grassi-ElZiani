@@ -265,7 +265,7 @@ void WaveEquationSerial<dim>::assemble_u(const double& time)
     // With (theta * f_n+1 + (1-theta) * f_n) being stored in forcing_terms.
     tmp = forcing_terms;
     tmp *= time_step * time_step * theta;
-    rhs.add(1.0, forcing_terms);
+    rhs.add(1.0, tmp);
 
     // lhs = M + delta_t^2 * theta^2 * A
     matrix_u.copy_from(mass_matrix);
@@ -309,7 +309,7 @@ void WaveEquationSerial<dim>::assemble_v(const double& time)
     // delta_t * (theta F_n+1 + (1.0 - theta) * F_n)
     tmp = forcing_terms;
     tmp *= time_step;
-    rhs.add(1.0, forcing_terms);
+    rhs.add(1.0, tmp);
 
     // lhs = M
     matrix_v.copy_from(mass_matrix);
