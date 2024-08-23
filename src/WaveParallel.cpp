@@ -9,7 +9,7 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
 {
 
     pcout << " ======================================== " << std::endl;
-    pcout << " WAVESERIAL - SETUP (FROM FILE) " << std::endl;
+    pcout << " WAVEPARALLEL - SETUP (FROM FILE) " << std::endl;
     pcout << " ======================================== " << std::endl;
 
 
@@ -79,7 +79,7 @@ void WaveEquationParallel<dim>::complete_setup()
     // is the degree of the polynomial plus one.
     {
         pcout << " Building the quadrature rule..." << std::endl;
-        quadrature = std::make_unique<QGauss<dim>>(fe->degree + 1);
+        quadrature = std::make_unique<QGaussSimplex<dim>>(fe->degree + 1);//TODO: Check
         pcout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
     }
 
@@ -91,7 +91,6 @@ void WaveEquationParallel<dim>::complete_setup()
 
         locally_owned_dofs = dof_handler.locally_owned_dofs();
         DoFTools::extract_locally_relevant_dofs(dof_handler, locally_relevant_dofs);
-
         pcout << " Number of degrees of freedom\t: " << dof_handler.n_dofs() << std::endl;
     }
 
@@ -142,10 +141,10 @@ template <unsigned int dim>
 void WaveEquationParallel<dim>::assemble_matrices(const bool& builtin)
 {
     // Make pcout of bools be true/false
-    std::boolalpha(pcout);
+    //std::boolalpha(pcout);
 
     pcout << " ======================================== " << std::endl;
-    pcout << " WAVESERIAL - ASSEMBLING MATRICES." << std::endl;
+    pcout << " WAVEPARALLEL - ASSEMBLING MATRICES." << std::endl;
     pcout << " Using builtin methods\t: " << builtin << std::endl;
     pcout << " ======================================== " << std::endl;
 
@@ -215,8 +214,11 @@ void WaveEquationParallel<dim>::assemble_matrices(const bool& builtin)
             mass_matrix.add(local_dof_indices, cell_mass_matrix);
             laplace_matrix.add(local_dof_indices, cell_laplace_matrix);
         }
+        //pcout << "Mass per compress: " << mass_matrix.l1_norm() << std::endl;
         mass_matrix.compress(VectorOperation::add);
         laplace_matrix.compress(VectorOperation::add);
+        //pcout << "Mass post compress: " << mass_matrix.l1_norm() << std::endl;
+        
     }
     pcout << " ======================================== " << std::endl;
 }
@@ -226,7 +228,7 @@ void WaveEquationParallel<dim>::run()
 {
 
     pcout << " ======================================== " << std::endl;
-    pcout << " WAVESERIAL - SOLVING THE PROBLEM." << std::endl;
+    pcout << " WAVEPARALLEL - SOLVING THE PROBLEM." << std::endl;
     pcout << " ======================================== " << std::endl;
 
     // First, initialize the solution vectors
@@ -245,7 +247,7 @@ void WaveEquationParallel<dim>::run()
     VectorTools::interpolate(
         dof_handler,
         initial_v,
-        old_solution_v
+        old_solution_v_owned
     );
     old_solution_v = old_solution_v_owned;
 
@@ -289,7 +291,7 @@ void WaveEquationParallel<dim>::assemble_u(const double& time)
     rhs = 0.0;
     // M*u_n
     mass_matrix.vmult(rhs, old_solution_u);
-
+    
     // -delta_t^2 * theta (1-theta) * A * u_n
     laplace_matrix.vmult(tmp, old_solution_u);
     rhs.add(-time_step * time_step * theta * (1.0 - theta), tmp);
@@ -297,36 +299,38 @@ void WaveEquationParallel<dim>::assemble_u(const double& time)
     // delta_t * M * v_n
     mass_matrix.vmult(tmp, old_solution_v);
     rhs.add(time_step, tmp);
-
+    
     // delta_t^2 * theta * (theta * f_n+1 + (1-theta) * f_n)
     // With (theta * f_n+1 + (1-theta) * f_n) being stored in forcing_terms.
     tmp = forcing_terms;
     tmp *= time_step * time_step * theta;
     rhs.add(1.0, forcing_terms);
-
+    
     // lhs = M + delta_t^2 * theta^2 * A
     matrix_u.copy_from(mass_matrix);
     matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
 
     // Boundary conditions
     BoundaryU boundary_values_u;
+    
     boundary_values_u.set_time(time);
     std::map<types::global_dof_index, double> boundary_values;
-
-    VectorTools::interpolate_boundary_values(
-        dof_handler,
-        0,
-        boundary_values_u,
-        boundary_values
-    );
-
+    for (unsigned int i=0; i <4 ; i++){
+        VectorTools::interpolate_boundary_values(
+            dof_handler,
+            i,
+            boundary_values_u,
+            boundary_values
+        );
+    }
+    
     MatrixTools::apply_boundary_values(
         boundary_values,
         matrix_u,
         solution_u_owned,
         rhs
     );
-
+    
 }   
 
 template <unsigned int dim>
@@ -355,13 +359,14 @@ void WaveEquationParallel<dim>::assemble_v(const double& time)
     BoundaryV boundary_values_v;
     boundary_values_v.set_time(time);
     std::map<types::global_dof_index, double> boundary_values;
-
-    VectorTools::interpolate_boundary_values(
-        dof_handler,
-        0,
-        boundary_values_v,
-        boundary_values
-    );
+    for (unsigned int i=0; i <4 ; i++){
+        VectorTools::interpolate_boundary_values(
+            dof_handler,
+            i,
+            boundary_values_v,
+            boundary_values
+        );
+    }
 
     MatrixTools::apply_boundary_values(
         boundary_values,
@@ -432,11 +437,12 @@ void WaveEquationParallel<dim>::compute_forcing_terms(const double& time, const 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::solve_u()
 {
-    SolverControl solver_control(1000, 1e-6 * rhs.l2_norm());
+    SolverControl solver_control(1000, 1e-6 *rhs.l2_norm());
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
     solver.solve(matrix_u, solution_u_owned, rhs, TrilinosWrappers::PreconditionIdentity());
     pcout << " Solution U\t: " << solver_control.last_step() << " Iterations "<< std::endl;
+
 
     solution_u = solution_u_owned;
 }
@@ -444,7 +450,7 @@ void WaveEquationParallel<dim>::solve_u()
 template <unsigned int dim>
 void WaveEquationParallel<dim>::solve_v()
 {
-    SolverControl solver_control(1000, 1e-9 * rhs.l2_norm());
+    SolverControl solver_control(1000, 1e-6 * rhs.l2_norm());
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
     solver.solve(matrix_v, solution_v_owned, rhs, TrilinosWrappers::PreconditionIdentity());

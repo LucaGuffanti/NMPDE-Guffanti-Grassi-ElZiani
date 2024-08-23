@@ -186,6 +186,7 @@ void WaveEquationSerial<dim>::assemble_matrices(const bool& builtin)
             laplace_matrix.add(local_dof_indices, cell_laplace_matrix);
         }
     }
+    //std::cout << "MassMat: " << mass_matrix.l1_norm() << std::endl;
     std::cout << " ======================================== " << std::endl;
 }
 
@@ -250,23 +251,20 @@ template <unsigned int dim>
 void WaveEquationSerial<dim>::assemble_u(const double& time)
 {
     rhs = 0.0;
+    //cout << " Init:" << old_solution_u.l2_norm() << "    ";
     // M*u_n
     mass_matrix.vmult(rhs, old_solution_u);
-
     // -delta_t^2 * theta (1-theta) * A * u_n
     laplace_matrix.vmult(tmp, old_solution_u);
     rhs.add(-time_step * time_step * theta * (1.0 - theta), tmp);
-
     // delta_t * M * v_n
     mass_matrix.vmult(tmp, old_solution_v);
     rhs.add(time_step, tmp);
-
     // delta_t^2 * theta * (theta * f_n+1 + (1-theta) * f_n)
     // With (theta * f_n+1 + (1-theta) * f_n) being stored in forcing_terms.
     tmp = forcing_terms;
     tmp *= time_step * time_step * theta;
     rhs.add(1.0, forcing_terms);
-
     // lhs = M + delta_t^2 * theta^2 * A
     matrix_u.copy_from(mass_matrix);
     matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
@@ -275,14 +273,14 @@ void WaveEquationSerial<dim>::assemble_u(const double& time)
     BoundaryU boundary_values_u;
     boundary_values_u.set_time(time);
     std::map<types::global_dof_index, double> boundary_values;
-
-    VectorTools::interpolate_boundary_values(
-        dof_handler,
-        0,
-        boundary_values_u,
-        boundary_values
-    );
-
+    for (unsigned int i=0; i <4 ; i++){
+        VectorTools::interpolate_boundary_values(
+            dof_handler,
+            i,
+            boundary_values_u,
+            boundary_values
+        );
+    }
     MatrixTools::apply_boundary_values(
         boundary_values,
         matrix_u,
@@ -297,20 +295,16 @@ void WaveEquationSerial<dim>::assemble_v(const double& time)
 {
     // M * v_n
     mass_matrix.vmult(rhs, old_solution_v);
-
     // -delta_t * theta * A * u_n
     laplace_matrix.vmult(tmp, solution_u);
     rhs.add(-time_step * theta, tmp);
-
     // -delta_t * (1 - theta) * A * u_n
     laplace_matrix.vmult(tmp, old_solution_u);
     rhs.add(-time_step * (1.0 - theta), tmp);
-
     // delta_t * (theta F_n+1 + (1.0 - theta) * F_n)
     tmp = forcing_terms;
     tmp *= time_step;
     rhs.add(1.0, forcing_terms);
-
     // lhs = M
     matrix_v.copy_from(mass_matrix);
 
@@ -319,12 +313,14 @@ void WaveEquationSerial<dim>::assemble_v(const double& time)
     boundary_values_v.set_time(time);
     std::map<types::global_dof_index, double> boundary_values;
 
-    VectorTools::interpolate_boundary_values(
-        dof_handler,
-        0,
-        boundary_values_v,
-        boundary_values
-    );
+    for (unsigned int i=0; i <4 ; i++){
+        VectorTools::interpolate_boundary_values(
+            dof_handler,
+            i,
+            boundary_values_v,
+            boundary_values
+        );
+    }
 
     MatrixTools::apply_boundary_values(
         boundary_values,
@@ -332,6 +328,7 @@ void WaveEquationSerial<dim>::assemble_v(const double& time)
         solution_v,
         rhs
     );
+    //cout <<"rhs pst bound: "<< rhs.l2_norm()<< std::endl;
 }
 
 template <unsigned int dim>

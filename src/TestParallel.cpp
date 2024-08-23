@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
         theta
     );
 
-    wave_eq.setup("../mesh/mesh_l.gmsh");
+    wave_eq.setup("../mesh-square-40.msh");
     wave_eq.assemble_matrices(false);
     wave_eq.run();
 

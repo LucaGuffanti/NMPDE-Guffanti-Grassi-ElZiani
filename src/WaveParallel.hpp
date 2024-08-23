@@ -1,5 +1,5 @@
 #ifndef WAVE_EQUATION_PARALLEL_HPP
-#define WAVE_EQUATOIN_PARALLEL_HPP
+#define WAVE_EQUATION_PARALLEL_HPP
 
 
 // ==================== INCLUDES ====================
@@ -145,8 +145,16 @@ public:
         BoundaryU(){}
 
         virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
-        {
-            return 0.5;
+        {   
+            
+            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
+            (p[1] < 3. / 4))
+            {   
+                //return std::sin(3*this->get_time()) * std::exp(-this->get_time());
+                return std::sin(10*this->get_time());
+            }
+            else
+                return 0;
         }
 
     };
@@ -163,7 +171,14 @@ public:
 
         virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
         {
-            return 0.0;
+            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
+            (p[1] < 3. / 4))
+            {
+                //return 3*std::cos(3*this->get_time()) * std::exp(-this->get_time()) - std::sin(3*this->get_time()) * std::exp(-this->get_time());
+                return 10*std::cos(10*this->get_time());
+            }
+            else
+                return 0;
         }
 
     };
@@ -180,11 +195,11 @@ public:
 
         virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
         {
-            if (this->get_time() <= 1.0 && p[0] < 0.5 && p[0] > -0.5)
+            /*if (this->get_time() <= 1.0 && p[0] < 0.5 && p[0] > -0.5)
             {
                 return 0.1 * std::sin(this->get_time()) * std::exp(-this->get_time()) + 1;
             }
-            else
+            else*/
                 return 0;
         }
 
