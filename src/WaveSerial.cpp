@@ -32,6 +32,13 @@ void WaveEquationSerial<dim>::setup(const std::string &mesh_file)
         std::cout << " Degree of polynomials\t: " << fe->degree << std::endl;
         std::cout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
+    // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
+    // is the degree of the polynomial plus one.
+    {
+        std::cout << " Building the quadrature rule..." << std::endl;
+        quadrature = std::make_unique<QGaussSimplex<dim>>(fe->degree + 1);
+        std::cout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
+    }
 
     complete_setup();
 }
@@ -60,15 +67,6 @@ void WaveEquationSerial<dim>::setup()
         std::cout << " Degree of polynomials\t: " << fe->degree << std::endl;
         std::cout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
-
-    complete_setup();
-}
-
-template <unsigned int dim>
-void WaveEquationSerial<dim>::complete_setup()
-{
-    
-
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
     // is the degree of the polynomial plus one.
     {
@@ -77,6 +75,13 @@ void WaveEquationSerial<dim>::complete_setup()
         std::cout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
     }
 
+    complete_setup();
+}
+
+template <unsigned int dim>
+void WaveEquationSerial<dim>::complete_setup()
+{
+    
     // Re-initialize the DoF-Handler, and distribute the degrees of freedom across the triangulation (mesh).
     {
         std::cout << " Creating the DoF handler..." << std::endl;
@@ -400,7 +405,7 @@ void WaveEquationSerial<dim>::solve_u()
 template <unsigned int dim>
 void WaveEquationSerial<dim>::solve_v()
 {
-    SolverControl solver_control(1000, 1e-9 * rhs.l2_norm());
+    SolverControl solver_control(1000, 1e-6 * rhs.l2_norm());
     SolverCG<Vector<double>> solver(solver_control);
 
     solver.solve(matrix_v, solution_v, rhs, PreconditionIdentity());

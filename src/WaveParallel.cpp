@@ -11,7 +11,7 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
     pcout << " ======================================== " << std::endl;
     pcout << " WAVEPARALLEL - SETUP (FROM FILE) " << std::endl;
     pcout << " ======================================== " << std::endl;
-
+    customSetup =true;
 
     // Create the mesh. The mesh is created by reading the input file, passed as a parameter
     {
@@ -39,6 +39,14 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
 
+    // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
+    // is the degree of the polynomial plus one.
+    {
+        pcout << " Building the quadrature rule..." << std::endl;
+        quadrature = std::make_unique<QGaussSimplex<dim>>(fe->degree + 1);//TODO: Check
+        pcout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
+    }
+
     complete_setup();
 }
 
@@ -53,9 +61,10 @@ void WaveEquationParallel<dim>::setup()
     // Create the mesh. The mesh is created by reading the input file, passed as a parameter
     {
         pcout << " Creating mesh..." << std::endl;
+        
         GridGenerator::hyper_cube(triangulation, -1, 1);
         triangulation.refine_global(7);
-
+        
         pcout << " Number of elements\t: " << triangulation.n_active_cells() << std::endl;
     }   
 
@@ -65,6 +74,14 @@ void WaveEquationParallel<dim>::setup()
         fe = std::make_unique<FE_Q<dim>>(degree);
         pcout << " Degree of polynomials\t: " << fe->degree << std::endl;
         pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
+    }
+
+    // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
+    // is the degree of the polynomial plus one.
+    {
+        pcout << " Building the quadrature rule..." << std::endl;
+        quadrature = std::make_unique<QGauss<dim>>(fe->degree + 1);//TODO: Check
+        pcout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
     }
 
     complete_setup();

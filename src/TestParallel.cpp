@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
 
     const unsigned int degree = 1;
     const double interval = 15.0;
-    const double time_step = 1./64;
+    const double time_step = 1./16;
     const double theta = 0.5;
 
     WaveEquationParallel<2> wave_eq(
@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
         theta
     );
 
-    wave_eq.setup("../mesh-square-40.msh");
+    wave_eq.setup();
     wave_eq.assemble_matrices(false);
     wave_eq.run();
 

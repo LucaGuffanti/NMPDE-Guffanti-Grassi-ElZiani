@@ -147,14 +147,23 @@ public:
         virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
         {   
             
-            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            (p[1] < 3. / 4))
-            {   
-                //return std::sin(3*this->get_time()) * std::exp(-this->get_time());
+            //Boundary no setup
+            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
+            (p[1] > -1. / 3))
+            {
                 return std::sin(10*this->get_time());
             }
             else
                 return 0;
+
+            //boundary Setup
+            /*if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
+            (p[1] < 3. / 4))
+            {   
+                return std::sin(10*this->get_time());
+            }
+            else
+                return 0;*/
         }
 
     };
@@ -171,14 +180,23 @@ public:
 
         virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
         {
-            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            (p[1] < 3. / 4))
+            //Boundary no setup
+            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
+            (p[1] > -1. / 3))
             {
-                //return 3*std::cos(3*this->get_time()) * std::exp(-this->get_time()) - std::sin(3*this->get_time()) * std::exp(-this->get_time());
                 return 10*std::cos(10*this->get_time());
             }
             else
                 return 0;
+
+            //Boundary setup
+            /*if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
+            (p[1] < 3. / 4))
+            {
+               return 10*std::cos(10*this->get_time());
+            }
+            else
+                return 0;*/
         }
 
     };
@@ -335,6 +353,10 @@ protected:
     // PARALLEL OUTPUT STREAM
     // =========================================
     ConditionalOStream pcout;
+
+
+
+    bool customSetup=false;
 };
 
 
