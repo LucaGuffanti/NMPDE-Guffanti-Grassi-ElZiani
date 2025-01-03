@@ -148,22 +148,23 @@ public:
         {   
             
             //Boundary no setup
-            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            (p[1] > -1. / 3))
-            {
-                return std::sin(10*this->get_time());
-            }
-            else
-                return 0;
+            // if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
+            // (p[1] > -1. / 3))
+            // {
+            //     return std::sin(10*this->get_time());
+            // }
+            // else
+            //     return 0;
 
+            ///return 10;
             //boundary Setup
-            /*if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
+            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
             (p[1] < 3. / 4))
             {   
                 return std::sin(10*this->get_time());
             }
             else
-                return 0;*/
+                return 0;
         }
 
     };
@@ -181,22 +182,22 @@ public:
         virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
         {
             //Boundary no setup
-            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            (p[1] > -1. / 3))
-            {
-                return 10*std::cos(10*this->get_time());
-            }
-            else
-                return 0;
-
+            // if ((this->get_time() <= 0.5) && (p[0] <= 0) && (p[1] < 1. / 3) &&
+            // (p[1] > -1. / 3))
+            // {
+            //     return 10*std::cos(10*this->get_time());
+            // }
+            // else
+            //     return 0;
+            //return 0;
             //Boundary setup
-            /*if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
+            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
             (p[1] < 3. / 4))
             {
                return 10*std::cos(10*this->get_time());
             }
             else
-                return 0;*/
+                return 0;
         }
 
     };
@@ -323,7 +324,6 @@ protected:
     
     // Right hand side of the currently considered equation
     TrilinosWrappers::MPI::Vector rhs;
-    TrilinosWrappers::MPI::Vector rhs_owned;
     
     // Last solution of the displacement equation
     TrilinosWrappers::MPI::Vector solution_u;

@@ -24,11 +24,11 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         std::ifstream input_file(mesh_file);
         grid_in.read_msh(input_file);
 
-        pcout << " Number of elements\t: " << triangulation.n_active_cells() << std::endl;
     
         GridTools::partition_triangulation(mpi_size, mesh_serial);
         const auto construction_data = TriangulationDescription::Utilities::create_description_from_triangulation(mesh_serial, MPI_COMM_WORLD);
         triangulation.create_triangulation(construction_data);
+        pcout << " Number of elements\t: " << triangulation.n_global_active_cells() << std::endl;
     }   
 
     // Build the finite element space. We use simplex elements with polinomials of degree 'degree'.
@@ -43,11 +43,58 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
     // is the degree of the polynomial plus one.
     {
         pcout << " Building the quadrature rule..." << std::endl;
-        quadrature = std::make_unique<QGaussSimplex<dim>>(fe->degree + 1);//TODO: Check
+        quadrature = std::make_unique<QGaussSimplex<dim>>(fe->degree + 1);
         pcout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
     }
 
-    complete_setup();
+    // Re-initialize the DoF-Handler, and distribute the degrees of freedom across the triangulation (mesh).
+    {
+        pcout << " Creating the DoF handler..." << std::endl;
+        dof_handler.reinit(triangulation);
+        dof_handler.distribute_dofs(*fe);
+
+        locally_owned_dofs = dof_handler.locally_owned_dofs();
+        DoFTools::extract_locally_relevant_dofs(dof_handler, locally_relevant_dofs);
+        pcout << " Number of degrees of freedom\t: " << dof_handler.n_dofs() << std::endl;
+    }
+
+    // Build the linear algebra terms: matrices (via the DynamicSparsityPattern object) and vectors
+    {
+        pcout << " Building the matrices..." << std::endl;
+        TrilinosWrappers::SparsityPattern sparsity(locally_owned_dofs, MPI_COMM_WORLD);
+        DoFTools::make_sparsity_pattern(dof_handler, sparsity);
+        sparsity.compress();
+
+
+        mass_matrix.reinit(sparsity);
+        laplace_matrix.reinit(sparsity);
+        matrix_u.reinit(sparsity);
+        matrix_v.reinit(sparsity);
+
+        pcout << " Building the vectors..." << std::endl;
+
+        rhs.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+        tmp.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+        forcing_terms.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+        
+        solution_u.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
+        solution_u_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
+        solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
+        solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
+        old_solution_u.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
+        old_solution_u_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
+        old_solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
+        old_solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
+        
+
+    }
+
+pcout << " ======================================== " << std::endl;
+
 }
 
 template <unsigned int dim>
@@ -80,7 +127,7 @@ void WaveEquationParallel<dim>::setup()
     // is the degree of the polynomial plus one.
     {
         pcout << " Building the quadrature rule..." << std::endl;
-        quadrature = std::make_unique<QGauss<dim>>(fe->degree + 1);//TODO: Check
+        quadrature = std::make_unique<QGauss<dim>>(fe->degree + 1);
         pcout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
     }
 
@@ -90,15 +137,6 @@ void WaveEquationParallel<dim>::setup()
 template <unsigned int dim>
 void WaveEquationParallel<dim>::complete_setup()
 {
-    
-
-    // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
-    // is the degree of the polynomial plus one.
-    {
-        pcout << " Building the quadrature rule..." << std::endl;
-        quadrature = std::make_unique<QGaussSimplex<dim>>(fe->degree + 1);//TODO: Check
-        pcout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
-    }
 
     // Re-initialize the DoF-Handler, and distribute the degrees of freedom across the triangulation (mesh).
     {
@@ -126,8 +164,9 @@ void WaveEquationParallel<dim>::complete_setup()
 
         pcout << " Building the vectors..." << std::endl;
 
-        rhs.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
-        rhs_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+        rhs.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+        forcing_terms.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+        tmp.reinit(locally_owned_dofs, MPI_COMM_WORLD);
         
         solution_u.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         solution_u_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
@@ -141,12 +180,7 @@ void WaveEquationParallel<dim>::complete_setup()
         old_solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         old_solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
-        forcing_terms.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
-        forcing_terms_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
         
-        tmp.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
-        tmp_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-
 
     }
 
@@ -259,6 +293,7 @@ void WaveEquationParallel<dim>::run()
         old_solution_u_owned
     );
     old_solution_u = old_solution_u_owned;
+    solution_u = old_solution_u_owned;
 
     // Interpolate the initial conditions onto the v vector
     VectorTools::interpolate(
@@ -267,6 +302,7 @@ void WaveEquationParallel<dim>::run()
         old_solution_v_owned
     );
     old_solution_v = old_solution_v_owned;
+    solution_v = old_solution_v_owned;
 
     // Now, we start the time loop
     time_step_number = 0;
@@ -281,21 +317,28 @@ void WaveEquationParallel<dim>::run()
         time += time_step;
         time_step_number = time_step_number + 1;
 
+        pcout << "Compute forcing terms" << std::endl;
         compute_forcing_terms(time, false);
 
+        pcout << "Assemble U" << std::endl;
         assemble_u(time);
 
+        pcout << "Solve U" << std::endl;
         solve_u();
 
+        pcout << "Assemble V" << std::endl;
         assemble_v(time);
 
+        pcout << "Solve V" << std::endl;
         solve_v();
+
+        pcout << "Output results" << std::endl;
         
         old_solution_u_owned = solution_u_owned;
         old_solution_v_owned = solution_v_owned;
 
-        old_solution_u = solution_u;
-        old_solution_v = solution_v;
+        old_solution_u = solution_u_owned;
+        old_solution_v = solution_v_owned;
 
         output_results();
     }
@@ -306,40 +349,53 @@ template <unsigned int dim>
 void WaveEquationParallel<dim>::assemble_u(const double& time)
 {
     rhs = 0.0;
-    // M*u_n
-    mass_matrix.vmult(rhs, old_solution_u);
-    
-    // -delta_t^2 * theta (1-theta) * A * u_n
-    laplace_matrix.vmult(tmp, old_solution_u);
-    rhs.add(-time_step * time_step * theta * (1.0 - theta), tmp);
+    tmp = 0.0;
 
+    pcout << "RHS L2 norm before assembly: " << rhs.l2_norm() << std::endl;
+
+    // M*u_n
+    mass_matrix.vmult(rhs, old_solution_u_owned);
+
+    pcout << "RHS L2 norm after M*u_n: " << rhs.l2_norm() << std::endl;
+    // // -delta_t^2 * theta (1-theta) * A * u_n
+    laplace_matrix.vmult(tmp, old_solution_u_owned);
+    rhs.add(-time_step * time_step * theta * (1.0 - theta), tmp);
+    pcout << "tmp L2 norm after -delta_t^2 * theta (1-theta) * A * u_n: " << tmp.l2_norm() << std::endl;
+    pcout << "RHS L2 norm after -delta_t^2 * theta (1-theta) * A * u_n: " << rhs.l2_norm() << std::endl;
     // delta_t * M * v_n
-    mass_matrix.vmult(tmp, old_solution_v);
+    mass_matrix.vmult(tmp, old_solution_v_owned);
     rhs.add(time_step, tmp);
     
     // delta_t^2 * theta * (theta * f_n+1 + (1-theta) * f_n)
     // With (theta * f_n+1 + (1-theta) * f_n) being stored in forcing_terms.
     tmp = forcing_terms;
     tmp *= time_step * time_step * theta;
-    rhs.add(1.0, forcing_terms);
+    rhs.add(1.0, tmp);
     
     // lhs = M + delta_t^2 * theta^2 * A
     matrix_u.copy_from(mass_matrix);
     matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
 
+    pcout << "RHS L2 norm after assembly: " << rhs.l2_norm() << std::endl;
+
     // Boundary conditions
     BoundaryU boundary_values_u;
     
     boundary_values_u.set_time(time);
+
     std::map<types::global_dof_index, double> boundary_values;
+    std::map<types::boundary_id, const Function<dim>*> boundary_functions;
+
+
     for (unsigned int i=0; i <4 ; i++){
-        VectorTools::interpolate_boundary_values(
-            dof_handler,
-            i,
-            boundary_values_u,
-            boundary_values
-        );
+        boundary_functions[i] = &boundary_values_u;
     }
+
+    VectorTools::interpolate_boundary_values(
+        dof_handler,
+        boundary_functions,
+        boundary_values
+    );
     
     MatrixTools::apply_boundary_values(
         boundary_values,
@@ -347,43 +403,52 @@ void WaveEquationParallel<dim>::assemble_u(const double& time)
         solution_u_owned,
         rhs
     );
-    
+
+    pcout << "RHS L2 norm after boundary conditions: " << rhs.l2_norm() << std::endl;
 }   
 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::assemble_v(const double& time)
 {
+
+    rhs = 0.0;
+    tmp = 0.0;
     // M * v_n
-    mass_matrix.vmult(rhs, old_solution_v);
+    mass_matrix.vmult(rhs, old_solution_v_owned);
 
     // -delta_t * theta * A * u_n
-    laplace_matrix.vmult(tmp, solution_u);
+    laplace_matrix.vmult(tmp, solution_u_owned);
     rhs.add(-time_step * theta, tmp);
 
     // -delta_t * (1 - theta) * A * u_n
-    laplace_matrix.vmult(tmp, old_solution_u);
+    laplace_matrix.vmult(tmp, old_solution_u_owned);
     rhs.add(-time_step * (1.0 - theta), tmp);
 
     // delta_t * (theta F_n+1 + (1.0 - theta) * F_n)
     tmp = forcing_terms;
     tmp *= time_step;
-    rhs.add(1.0, forcing_terms);
+    rhs.add(1.0, tmp);
 
     // lhs = M
     matrix_v.copy_from(mass_matrix);
+    pcout << "Norm of the matrix_v: " << matrix_v.l1_norm() << std::endl;
 
     // Boundary conditions
     BoundaryV boundary_values_v;
     boundary_values_v.set_time(time);
     std::map<types::global_dof_index, double> boundary_values;
-    for (unsigned int i=0; i <4 ; i++){
-        VectorTools::interpolate_boundary_values(
-            dof_handler,
-            i,
-            boundary_values_v,
-            boundary_values
-        );
+    std::map<types::boundary_id, const Function<dim>*> boundary_functions;
+
+    for (unsigned int i=0; i <4 ; i++)
+    {
+        boundary_functions[i] = &boundary_values_v;
     }
+
+    VectorTools::interpolate_boundary_values(
+        dof_handler,
+        boundary_functions,
+        boundary_values
+    );
 
     MatrixTools::apply_boundary_values(
         boundary_values,
@@ -391,6 +456,8 @@ void WaveEquationParallel<dim>::assemble_v(const double& time)
         solution_v_owned,
         rhs
     );
+
+
 }
 
 template <unsigned int dim>
@@ -454,7 +521,8 @@ void WaveEquationParallel<dim>::compute_forcing_terms(const double& time, const 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::solve_u()
 {
-    SolverControl solver_control(1000, 1e-6 *rhs.l2_norm());
+    pcout << "RHS vector norm: " << rhs.l2_norm() << std::endl;
+    SolverControl solver_control(1000, 1e-6 );
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
     solver.solve(matrix_u, solution_u_owned, rhs, TrilinosWrappers::PreconditionIdentity());
@@ -467,7 +535,7 @@ void WaveEquationParallel<dim>::solve_u()
 template <unsigned int dim>
 void WaveEquationParallel<dim>::solve_v()
 {
-    SolverControl solver_control(1000, 1e-6 * rhs.l2_norm());
+    SolverControl solver_control(1000, 1e-6);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
     solver.solve(matrix_v, solution_v_owned, rhs, TrilinosWrappers::PreconditionIdentity());
@@ -480,7 +548,8 @@ template <unsigned int dim>
 void WaveEquationParallel<dim>::output_results() const
 {
   DataOut<dim> data_out;
-  data_out.add_data_vector(dof_handler, solution_u, "u");
+  data_out.attach_dof_handler(dof_handler);
+  data_out.add_data_vector(solution_u, "u");
 
   std::vector<unsigned int> partition_int(triangulation.n_active_cells());
   GridTools::get_subdomain_association(triangulation, partition_int);
