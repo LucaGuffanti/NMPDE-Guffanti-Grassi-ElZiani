@@ -8,7 +8,6 @@ template <unsigned int dim>
 void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
 {
 
-    pcout << " ======================================== " << std::endl;
     pcout << " WAVEPARALLEL - SETUP (FROM FILE) " << std::endl;
     pcout << " ======================================== " << std::endl;
     customSetup =true;
@@ -92,15 +91,11 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         
 
     }
-
-pcout << " ======================================== " << std::endl;
-
 }
 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::setup()
 {
-    pcout << " ======================================== " << std::endl;
     pcout << " WAVESERIAL - GENERATING MESH" << std::endl;
     pcout << " ======================================== " << std::endl;
 
@@ -194,9 +189,7 @@ void WaveEquationParallel<dim>::assemble_matrices(const bool& builtin)
     // Make pcout of bools be true/false
     //std::boolalpha(pcout);
 
-    pcout << " ======================================== " << std::endl;
     pcout << " WAVEPARALLEL - ASSEMBLING MATRICES." << std::endl;
-    pcout << " Using builtin methods\t: " << builtin << std::endl;
     pcout << " ======================================== " << std::endl;
 
     if (builtin)
@@ -265,20 +258,15 @@ void WaveEquationParallel<dim>::assemble_matrices(const bool& builtin)
             mass_matrix.add(local_dof_indices, cell_mass_matrix);
             laplace_matrix.add(local_dof_indices, cell_laplace_matrix);
         }
-        //pcout << "Mass per compress: " << mass_matrix.l1_norm() << std::endl;
         mass_matrix.compress(VectorOperation::add);
         laplace_matrix.compress(VectorOperation::add);
-        //pcout << "Mass post compress: " << mass_matrix.l1_norm() << std::endl;
-        
     }
-    pcout << " ======================================== " << std::endl;
 }
 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::run()
 {
 
-    pcout << " ======================================== " << std::endl;
     pcout << " WAVEPARALLEL - SOLVING THE PROBLEM." << std::endl;
     pcout << " ======================================== " << std::endl;
 
@@ -317,23 +305,16 @@ void WaveEquationParallel<dim>::run()
         time += time_step;
         time_step_number = time_step_number + 1;
 
-        pcout << "Compute forcing terms" << std::endl;
         compute_forcing_terms(time, false);
 
-        pcout << "Assemble U" << std::endl;
         assemble_u(time);
 
-        pcout << "Solve U" << std::endl;
         solve_u();
 
-        pcout << "Assemble V" << std::endl;
         assemble_v(time);
 
-        pcout << "Solve V" << std::endl;
         solve_v();
 
-        pcout << "Output results" << std::endl;
-        
         old_solution_u_owned = solution_u_owned;
         old_solution_v_owned = solution_v_owned;
 
@@ -351,17 +332,13 @@ void WaveEquationParallel<dim>::assemble_u(const double& time)
     rhs = 0.0;
     tmp = 0.0;
 
-    pcout << "RHS L2 norm before assembly: " << rhs.l2_norm() << std::endl;
 
     // M*u_n
     mass_matrix.vmult(rhs, old_solution_u_owned);
 
-    pcout << "RHS L2 norm after M*u_n: " << rhs.l2_norm() << std::endl;
-    // // -delta_t^2 * theta (1-theta) * A * u_n
+    // -delta_t^2 * theta (1-theta) * A * u_n
     laplace_matrix.vmult(tmp, old_solution_u_owned);
     rhs.add(-time_step * time_step * theta * (1.0 - theta), tmp);
-    pcout << "tmp L2 norm after -delta_t^2 * theta (1-theta) * A * u_n: " << tmp.l2_norm() << std::endl;
-    pcout << "RHS L2 norm after -delta_t^2 * theta (1-theta) * A * u_n: " << rhs.l2_norm() << std::endl;
     // delta_t * M * v_n
     mass_matrix.vmult(tmp, old_solution_v_owned);
     rhs.add(time_step, tmp);
@@ -375,8 +352,6 @@ void WaveEquationParallel<dim>::assemble_u(const double& time)
     // lhs = M + delta_t^2 * theta^2 * A
     matrix_u.copy_from(mass_matrix);
     matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
-
-    pcout << "RHS L2 norm after assembly: " << rhs.l2_norm() << std::endl;
 
     // Boundary conditions
     BoundaryU boundary_values_u;
@@ -403,8 +378,6 @@ void WaveEquationParallel<dim>::assemble_u(const double& time)
         solution_u_owned,
         rhs
     );
-
-    pcout << "RHS L2 norm after boundary conditions: " << rhs.l2_norm() << std::endl;
 }   
 
 template <unsigned int dim>
@@ -431,7 +404,6 @@ void WaveEquationParallel<dim>::assemble_v(const double& time)
 
     // lhs = M
     matrix_v.copy_from(mass_matrix);
-    pcout << "Norm of the matrix_v: " << matrix_v.l1_norm() << std::endl;
 
     // Boundary conditions
     BoundaryV boundary_values_v;
@@ -456,8 +428,6 @@ void WaveEquationParallel<dim>::assemble_v(const double& time)
         solution_v_owned,
         rhs
     );
-
-
 }
 
 template <unsigned int dim>
@@ -521,7 +491,6 @@ void WaveEquationParallel<dim>::compute_forcing_terms(const double& time, const 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::solve_u()
 {
-    pcout << "RHS vector norm: " << rhs.l2_norm() << std::endl;
     SolverControl solver_control(1000, 1e-6 );
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
