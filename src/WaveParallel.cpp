@@ -322,6 +322,10 @@ void WaveEquationParallel<dim>::run()
         old_solution_v = solution_v_owned;
 
         output_results();
+
+        const double energy = mass_matrix.matrix_norm_square(solution_v_owned) / 2.0 + laplace_matrix.matrix_norm_square(solution_u_owned) / 2.0;
+        pcout << "Energy\t: " << energy << std::endl;
+
     }
 }
 
