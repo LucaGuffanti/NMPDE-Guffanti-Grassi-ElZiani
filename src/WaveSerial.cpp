@@ -248,6 +248,8 @@ void WaveEquationSerial<dim>::run()
         old_solution_v = solution_v;
 
         output_results();
+        const double energy = mass_matrix.matrix_norm_square(solution_v) / 2.0 + laplace_matrix.matrix_norm_square(solution_u) / 2.0;
+        std::cout << "Energy\t: " << energy << std::endl;
     }
 }
 
