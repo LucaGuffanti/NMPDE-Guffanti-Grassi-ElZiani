@@ -301,7 +301,7 @@ void WaveEquationParallel<dim>::run()
     while (time < interval)
     {
         
-        pcout << "TIME: " << time << std::endl;
+        pcout << "TIME: " << time + time_step << std::endl;
         time += time_step;
         time_step_number = time_step_number + 1;
 
@@ -495,7 +495,7 @@ void WaveEquationParallel<dim>::compute_forcing_terms(const double& time, const 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::solve_u()
 {
-    SolverControl solver_control(1000, 1e-6 );
+    SolverControl solver_control(1000, 1e-12 );
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
     solver.solve(matrix_u, solution_u_owned, rhs, TrilinosWrappers::PreconditionIdentity());
@@ -508,7 +508,7 @@ void WaveEquationParallel<dim>::solve_u()
 template <unsigned int dim>
 void WaveEquationParallel<dim>::solve_v()
 {
-    SolverControl solver_control(1000, 1e-6);
+    SolverControl solver_control(1000, 1e-12);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
     solver.solve(matrix_v, solution_v_owned, rhs, TrilinosWrappers::PreconditionIdentity());
