@@ -6,7 +6,7 @@ int main()
     const unsigned int degree = 1;
     const double interval = 15.0;
     const double time_step = 1./16;
-    const double theta = 0.5;
+    const double theta = 1;
 
     WaveEquationSerial<2> wave_eq(
         degree,

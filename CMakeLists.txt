@@ -1,21 +1,24 @@
 cmake_minimum_required(VERSION 3.12.0)
-project(project_title LANGUAGES CXX C)
+project(NMPDE LANGUAGES CXX C)
 
 include(init.cmake)
 
-# Executable for sequential Wave Equation
-add_executable(WaveSerial src/WaveSerial.cpp src/TestSerial.cpp)
-
+# Serial implementation
+add_executable(WaveSerial test/TestSerial.cpp src/WaveSerial.cpp)
+target_include_directories(WaveSerial PRIVATE include)
 deal_ii_setup_target(WaveSerial)
 
-add_executable(WaveParallel src/WaveParallel.cpp src/TestParallel.cpp)
-
+# Parallel implementation
+add_executable(WaveParallel test/TestParallel.cpp src/WaveParallel.cpp)
+target_include_directories(WaveParallel PRIVATE include)
 deal_ii_setup_target(WaveParallel)
 
-add_executable(VerletSerial src/TestVerletSerial.cpp src/VerletSerial.cpp)
-
+# Serial implementation with Verlet integration
+add_executable(VerletSerial test/TestVerletSerial.cpp src/VerletSerial.cpp)
+target_include_directories(VerletSerial PRIVATE include)
 deal_ii_setup_target(VerletSerial)
 
-add_executable(VerletParallel src/TestVerletParallel.cpp src/VerletParallel.cpp)
-
+# Parallel implementation with Verlet integration
+add_executable(VerletParallel test/TestVerletParallel.cpp src/VerletParallel.cpp)
+target_include_directories(VerletParallel PRIVATE include)
 deal_ii_setup_target(VerletParallel)

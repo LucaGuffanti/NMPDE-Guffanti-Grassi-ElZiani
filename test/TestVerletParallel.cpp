@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
     );
 
     // wave_eq.setup("/home/lucaguf/Documenti/dev/NMPDE-Guffanti-Grassi-ElZiani/mesh/mesh-square-h0.100000.msh");
-    wave_eq.setup("/home/lucaguf/Documenti/dev/NMPDE-Guffanti-Grassi-ElZiani/mesh/mesh-square-h0.100000.msh");
+    wave_eq.setup("/home/lucaguf/Documenti/dev/NMPDE-Guffanti-Grassi-ElZiani/mesh/mesh-square-h0.050000.msh");
     wave_eq.assemble_matrices(false);
     wave_eq.run();
 
