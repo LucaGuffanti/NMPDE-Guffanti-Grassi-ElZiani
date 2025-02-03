@@ -1,7 +1,7 @@
 #include <iostream>
 #include "VerletSerial.hpp"
 
-int main()
+int main(int argc, char** argv)
 {
     const unsigned int degree = 2;
     const double interval = 10.0;
@@ -12,8 +12,10 @@ int main()
         interval,
         time_step
     );
+    
+    const unsigned int times = atoi(argv[1]);
 
-    wave_eq.setup(5);
+    wave_eq.setup(times);
     wave_eq.assemble_matrices();
     wave_eq.run();
 

@@ -34,7 +34,6 @@ void VerletParallel<dim>::setup(const std::string &mesh_file)
         pcout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_SimplexP<dim>>(degree);
         pcout << " Degree of polynomials\t: " << fe->degree << std::endl;
-        pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
 
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
@@ -101,6 +100,7 @@ void VerletParallel<dim>::complete_setup()
 
         locally_owned_dofs = dof_handler.locally_owned_dofs();
         DoFTools::extract_locally_relevant_dofs(dof_handler, locally_relevant_dofs);
+        pcout << " Number of degrees of freedom\t: " << dof_handler.n_dofs() << std::endl;
     }
 
     // Build the linear algebra terms: matrices (via the DynamicSparsityPattern object) and vectors
