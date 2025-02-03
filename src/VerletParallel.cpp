@@ -7,7 +7,7 @@
 template <unsigned int dim>
 void VerletParallel<dim>::setup(const std::string &mesh_file)
 {
-
+    timer.enter_section("Setup");
     pcout << " VerletParallel - SETUP (FROM FILE) " << std::endl;
     pcout << " ======================================== " << std::endl;
 
@@ -51,6 +51,7 @@ void VerletParallel<dim>::setup(const std::string &mesh_file)
 template <unsigned int dim>
 void VerletParallel<dim>::setup(const unsigned int& times)
 {
+    timer.enter_section("Setup");
     pcout << " WAVESERIAL - GENERATING MESH" << std::endl;
     pcout << " ======================================== " << std::endl;
 
@@ -75,7 +76,6 @@ void VerletParallel<dim>::setup(const unsigned int& times)
         pcout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_Q<dim>>(degree);
         pcout << " Degree of polynomials\t: " << fe->degree << std::endl;
-        pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
 
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
@@ -101,7 +101,6 @@ void VerletParallel<dim>::complete_setup()
 
         locally_owned_dofs = dof_handler.locally_owned_dofs();
         DoFTools::extract_locally_relevant_dofs(dof_handler, locally_relevant_dofs);
-        pcout << " Number of degrees of freedom\t: " << dof_handler.n_dofs() << std::endl;
     }
 
     // Build the linear algebra terms: matrices (via the DynamicSparsityPattern object) and vectors
@@ -136,7 +135,7 @@ void VerletParallel<dim>::complete_setup()
         a_new_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
     }
-
+    timer.exit_section("Setup");
 pcout << " ======================================== " << std::endl;
 
 }
@@ -144,7 +143,7 @@ pcout << " ======================================== " << std::endl;
 template <unsigned int dim>
 void VerletParallel<dim>::assemble_matrices()
 {
-
+    timer.enter_section("Assemble Mass/Laplace");
     pcout << " VerletParallel - ASSEMBLING MATRICES." << std::endl;
     pcout << " ======================================== " << std::endl;
 
@@ -200,15 +199,17 @@ void VerletParallel<dim>::assemble_matrices()
     }
     mass_matrix.compress(VectorOperation::add);
     laplace_matrix.compress(VectorOperation::add);
+    timer.exit_section("Assemble Mass/Laplace");
 }
 
 template <unsigned int dim>
 void VerletParallel<dim>::run()
 {
-
+    timer.enter_section("Run");
     pcout << " VerletParallel - SOLVING THE PROBLEM." << std::endl;
     pcout << " ======================================== " << std::endl;
 
+    timer.enter_subsection("Init");
     // First, initialize the solution vectors
     initial_u.set_time(0.0);
     initial_v.set_time(0.0);
@@ -235,8 +236,13 @@ void VerletParallel<dim>::run()
 
     output_results();
 
+    timer.enter_section("Compute Acceleration");
     compute_acceleration(time);
+    timer.exit_section("Compute Acceleration");
+
     a_old_owned = a_new_owned;
+    timer.exit_section("Init");
+
 
     while (time < interval)
     {
@@ -245,6 +251,7 @@ void VerletParallel<dim>::run()
 
         pcout << "Time: " << time << std::endl;
         
+        timer.enter_section("Solve U");
         solution_u_owned = old_solution_u_owned;
         tmp = old_solution_v_owned;
         tmp *= time_step;
@@ -256,8 +263,14 @@ void VerletParallel<dim>::run()
 
         solution_u_owned += tmp;
         solution_u = solution_u_owned;
+        timer.exit_section("Solve U");
 
+
+        timer.enter_section("Compute Acceleration");
         compute_acceleration(time);
+        timer.exit_section("Compute Acceleration");
+
+        timer.enter_section("Solve V");
         solution_v_owned = old_solution_v_owned;
         tmp = a_old_owned;
         tmp *= time_step / 2.0;
@@ -268,17 +281,23 @@ void VerletParallel<dim>::run()
         solution_v_owned += tmp;
 
         solution_v = solution_v_owned;
+        timer.exit_section("Solve V");
 
+        timer.enter_subsection("Output Results");
         output_results();
+        timer.exit_section("Output Results");
 
         old_solution_u_owned = solution_u_owned;
         old_solution_v_owned = solution_v_owned;
         a_old_owned = a_new_owned;
 
+        timer.enter_subsection("Energy");
         const double energy = mass_matrix.matrix_norm_square(solution_v_owned) / 2.0 + laplace_matrix.matrix_norm_square(solution_u_owned) / 2.0;
         pcout << "Energy\t: " << energy << std::endl;
+        timer.exit_section("Energy");
 
     }
+    timer.exit_section("Run");
 }
 
 template <unsigned int dim>
@@ -332,8 +351,10 @@ void VerletParallel<dim>::compute_forcing_terms(const double& time)
 template <unsigned int dim>
 void VerletParallel<dim>::compute_acceleration(const double& time)
 {
+    timer.enter_subsection("Forcing Terms");
     // Compute the forcing term
     compute_forcing_terms(time);
+    timer.exit_section("Forcing Terms");
 
     // Compute the right hand side
     tmp = 0.0;
@@ -390,7 +411,11 @@ void VerletParallel<dim>::output_results() const
     "./", "output", time_step_number, MPI_COMM_WORLD, 3);
 }
 
- 
+template <unsigned int dim>
+void VerletParallel<dim>::print_timer_data() const 
+{
+    timer.print_wall_time_statistics(MPI_COMM_WORLD);
+}
 
 template class VerletParallel<2>;
 template class VerletParallel<3>;

@@ -36,6 +36,9 @@
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/matrix_tools.h>
 
+// Timing
+#include <deal.II/base/timer.h>
+
 // STL libraries
 #include <iostream>
 #include <fstream>
@@ -84,6 +87,8 @@ public:
      */
     void run();
 
+    void print_timer_data() const;
+
     WaveEquationParallel(
         const unsigned int& degree_,
         const double& interval_,
@@ -98,6 +103,7 @@ public:
     ,   mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
     ,   triangulation(MPI_COMM_WORLD)
     ,   pcout(std::cout, mpi_rank == 0)
+    ,   timer(pcout, TimerOutput::summary, TimerOutput::wall_times)
     {}
 
     /**
@@ -319,6 +325,7 @@ protected:
     // =========================================
     ConditionalOStream pcout;
 
+    TimerOutput timer;
 };
 
 

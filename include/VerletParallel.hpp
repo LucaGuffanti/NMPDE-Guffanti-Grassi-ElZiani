@@ -36,6 +36,9 @@
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/matrix_tools.h>
 
+// Timing
+#include <deal.II/base/timer.h>
+
 // STL libraries
 #include <iostream>
 #include <fstream>
@@ -92,6 +95,7 @@ public:
     ,   mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
     ,   triangulation(MPI_COMM_WORLD)
     ,   pcout(std::cout, mpi_rank == 0)
+    ,   timer(pcout, TimerOutput::summary, TimerOutput::wall_times)
     {}
 
     /**
@@ -204,6 +208,8 @@ protected:
      * 
      */
     void output_results() const;
+
+    void print_timer_data() const;
     
 
 protected:
@@ -291,6 +297,7 @@ protected:
     // =========================================
     ConditionalOStream pcout;
 
+    TimerOutput timer;
 
 
     bool customSetup=false;

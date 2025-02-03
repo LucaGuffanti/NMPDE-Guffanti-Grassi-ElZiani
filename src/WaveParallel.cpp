@@ -7,6 +7,7 @@
 template <unsigned int dim>
 void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
 {
+    timer.enter_section("Setup");
 
     pcout << " WAVEPARALLEL - SETUP (FROM FILE) " << std::endl;
     pcout << " ======================================== " << std::endl;
@@ -33,7 +34,6 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         pcout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_SimplexP<dim>>(degree);
         pcout << " Degree of polynomials\t: " << fe->degree << std::endl;
-        pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
 
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
@@ -50,6 +50,7 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
 template <unsigned int dim>
 void WaveEquationParallel<dim>::setup(const unsigned int& times)
 {
+    timer.enter_section("Setup");
     pcout << " WAVESERIAL - GENERATING MESH" << std::endl;
     pcout << " ======================================== " << std::endl;
 
@@ -72,7 +73,6 @@ void WaveEquationParallel<dim>::setup(const unsigned int& times)
         pcout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_Q<dim>>(degree);
         pcout << " Degree of polynomials\t: " << fe->degree << std::endl;
-        pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
 
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
@@ -132,7 +132,7 @@ void WaveEquationParallel<dim>::complete_setup()
         old_solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         old_solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
     }
-
+    timer.exit_section("Setup");
 pcout << " ======================================== " << std::endl;
 
 }
@@ -140,6 +140,8 @@ pcout << " ======================================== " << std::endl;
 template <unsigned int dim>
 void WaveEquationParallel<dim>::assemble_matrices()
 {
+
+    timer.enter_section("Assemble Mass/Laplace");
 
     pcout << " WAVEPARALLEL - ASSEMBLING MATRICES." << std::endl;
     pcout << " ======================================== " << std::endl;
@@ -196,11 +198,15 @@ void WaveEquationParallel<dim>::assemble_matrices()
     }
     mass_matrix.compress(VectorOperation::add);
     laplace_matrix.compress(VectorOperation::add);
+
+    timer.exit_section("Assemble Mass/Laplace");
 }
 
 template <unsigned int dim>
 void WaveEquationParallel<dim>::run()
 {
+    timer.enter_section("Run");
+    timer.enter_subsection("Init");
 
     pcout << " WAVEPARALLEL - SOLVING THE PROBLEM." << std::endl;
     pcout << " ======================================== " << std::endl;
@@ -233,6 +239,7 @@ void WaveEquationParallel<dim>::run()
 
     output_results();
 
+    timer.exit_section("Init");
     while (time < interval)
     {
         
@@ -240,15 +247,26 @@ void WaveEquationParallel<dim>::run()
         time += time_step;
         time_step_number = time_step_number + 1;
 
+        timer.enter_subsection("Forcing Terms");
         compute_forcing_terms(time);
+        timer.exit_section("Forcing Terms");
 
+
+        timer.enter_subsection("Assemble U");
         assemble_u(time);
+        timer.exit_section("Assemble U");
 
+        timer.enter_subsection("Solve U");
         solve_u();
+        timer.exit_section("Solve U");
 
+        timer.enter_subsection("Assemble V");
         assemble_v(time);
+        timer.exit_section("Assemble V");
 
+        timer.enter_subsection("Solve V");
         solve_v();
+        timer.exit_section("Solve V");
 
         old_solution_u_owned = solution_u_owned;
         old_solution_v_owned = solution_v_owned;
@@ -256,12 +274,17 @@ void WaveEquationParallel<dim>::run()
         old_solution_u = solution_u_owned;
         old_solution_v = solution_v_owned;
 
+        timer.enter_subsection("Output Results");
         output_results();
+        timer.exit_section("Output Results");
 
+        timer.enter_subsection("Energy");
         const double energy = mass_matrix.matrix_norm_square(solution_v_owned) / 2.0 + laplace_matrix.matrix_norm_square(solution_u_owned) / 2.0;
         pcout << " Energy : " << energy << std::endl;
+        timer.exit_section("Energy");
 
     }
+    timer.exit_section("Run");
 }
 
 
@@ -463,6 +486,11 @@ void WaveEquationParallel<dim>::output_results() const
     "./", "output", time_step_number, MPI_COMM_WORLD, 3);
 }
 
+template <unsigned int dim>
+void WaveEquationParallel<dim>::print_timer_data() const
+{
+    timer.print_wall_time_statistics(MPI_COMM_WORLD);
+}
  
 
 template class WaveEquationParallel<2>;

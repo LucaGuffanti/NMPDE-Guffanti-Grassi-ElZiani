@@ -30,7 +30,6 @@ void WaveEquationSerial<dim>::setup(const std::string &mesh_file)
         std::cout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_SimplexP<dim>>(degree);
         std::cout << " Degree of polynomials\t: " << fe->degree << std::endl;
-        std::cout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
     // is the degree of the polynomial plus one.
@@ -65,7 +64,6 @@ void WaveEquationSerial<dim>::setup(const unsigned int& times)
         std::cout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_Q<dim>>(degree);
         std::cout << " Degree of polynomials\t: " << fe->degree << std::endl;
-        std::cout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
     // is the degree of the polynomial plus one.
