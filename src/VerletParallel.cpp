@@ -51,7 +51,7 @@ template <unsigned int dim>
 void VerletParallel<dim>::setup(const unsigned int& times)
 {
     timer.enter_section("Setup");
-    pcout << " WAVESERIAL - GENERATING MESH" << std::endl;
+    pcout << " VerletParallel - GENERATING MESH" << std::endl;
     pcout << " ======================================== " << std::endl;
 
     // Create the mesh. The mesh is created by reading the input file, passed as a parameter
