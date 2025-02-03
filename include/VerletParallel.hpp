@@ -59,6 +59,7 @@ public:
     /**
      * @brief Constructs the triangulation, finite element space, DoF handler and linear algebra,
      * utilising deal.ii mesh generation infrastructure.
+     * @param times Number of times the mesh will be refined
      */
     void setup(const unsigned int& times=1);
 
@@ -75,10 +76,7 @@ public:
     void assemble_matrices();
 
     /**
-     * @brief Runs the solver by iteratively computing the right hand side of the position equation
-     * (u), solving the first system of equations (u_n+1) with the conjugate gradient method,
-     * computing the right hand side of the velocity equation with the newly produced u_n+1,
-     * and solving it by applying the conjugate gradient method. 
+     * @brief Runs the solver by iteratively applying the Verlet integration scheme at each time step. 
      */
     void run();
 
@@ -270,11 +268,9 @@ protected:
     TrilinosWrappers::MPI::Vector solution_v_owned;
 
     // Solution at the previous time step for the displacement equation
-    TrilinosWrappers::MPI::Vector old_solution_u;
     TrilinosWrappers::MPI::Vector old_solution_u_owned;
 
     // Solution at the previous time step for the velocity equation
-    TrilinosWrappers::MPI::Vector old_solution_v;
     TrilinosWrappers::MPI::Vector old_solution_v_owned;
 
     // Forcing term component of the right hand sides

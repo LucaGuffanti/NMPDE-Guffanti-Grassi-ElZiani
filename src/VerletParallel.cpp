@@ -128,10 +128,8 @@ void VerletParallel<dim>::complete_setup()
         solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
-        old_solution_u.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         old_solution_u_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
-        old_solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         old_solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
         a_old_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
@@ -221,7 +219,6 @@ void VerletParallel<dim>::run()
         initial_u,
         old_solution_u_owned
     );
-    old_solution_u = old_solution_u_owned;
     solution_u = old_solution_u_owned;
 
     // Interpolate the initial conditions onto the v vector
@@ -230,8 +227,6 @@ void VerletParallel<dim>::run()
         initial_v,
         old_solution_v_owned
     );
-
-    old_solution_v = old_solution_v_owned;
     solution_v = old_solution_v_owned;
 
     // Start the time loop
