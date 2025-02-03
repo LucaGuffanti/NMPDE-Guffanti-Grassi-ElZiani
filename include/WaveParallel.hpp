@@ -62,7 +62,7 @@ public:
      * 
      * @param times Number of times the mesh will be refined.
      */
-    void setup(const unsigned int& times = 1);
+    void setup(const unsigned int& times=1);
 
     /**
      * @brief Completes the construction of the problem by assembling objects that do not directly depend
@@ -73,9 +73,8 @@ public:
     /**
      * @brief Constructs the mass matrix and laplace matrix for the problem. 
      * 
-     * @param builtin Whether to use the builtin methods rather then computing the matrices manually.
      */
-    void assemble_matrices(const bool& builtin = false);
+    void assemble_matrices();
 
     /**
      * @brief Runs the solver by iteratively computing the right hand side of the position equation
@@ -97,8 +96,8 @@ public:
     ,   theta (theta_)
     ,   mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
     ,   mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
-    ,   pcout(std::cout, mpi_rank == 0)
     ,   triangulation(MPI_COMM_WORLD)
+    ,   pcout(std::cout, mpi_rank == 0)
     {}
 
     /**
@@ -130,7 +129,7 @@ public:
     public:
         InitialV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -146,7 +145,7 @@ public:
     public:
         BoundaryU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {   
             return 0.0;
         }
@@ -163,7 +162,7 @@ public:
     public:
         BoundaryV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -180,7 +179,7 @@ public:
     public:
         ForcingTerm(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& p, const unsigned int /*component*/ = 0) const override
         {
             if (this->get_time() <= 0.5 && ((p[0]-0.5)*(p[0]-0.5) + (p[1]-0.5)*(p[1]-0.5)) <= 0.0025)
                 return 3.0;
@@ -210,8 +209,9 @@ protected:
      * of the each equation. This function is called once per iteration as the forcing term
      * remains equal, entering the equation effectively scaled by a constant.
      * 
+     * @param time time of the current iteration
      */
-    void compute_forcing_terms(const double& time, const bool& builtin = false);
+    void compute_forcing_terms(const double& time);
 
     /**
      * @brief Solves the position equation with the conjugate gradient method

@@ -215,7 +215,7 @@ void VerletSerial<dim>::run()
         
         time += time_step;
         time_step_number = time_step_number + 1;
-        std::cout << " Time\t: " << time << std::endl;
+        std::cout << "Time\t: " << time << std::endl;
 
         // Compute u_i+1 = u_i + v_i delta_t + a_i * delta_t^2/2
         solution_u = old_solution_u;
@@ -253,7 +253,7 @@ void VerletSerial<dim>::run()
 
         // compute the energy
         const double energy = mass_matrix.matrix_norm_square(solution_v) / 2.0 + laplace_matrix.matrix_norm_square(solution_u) / 2.0;
-        std::cout << "Energy\t: " << energy << std::endl;
+        std::cout << " Energy\t: " << energy << std::endl;
     }
 
     

@@ -10,7 +10,6 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
 
     pcout << " WAVEPARALLEL - SETUP (FROM FILE) " << std::endl;
     pcout << " ======================================== " << std::endl;
-    customSetup =true;
 
     // Create the mesh. The mesh is created by reading the input file, passed as a parameter
     {
@@ -23,7 +22,6 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         std::ifstream input_file(mesh_file);
         grid_in.read_msh(input_file);
 
-    
         GridTools::partition_triangulation(mpi_size, mesh_serial);
         const auto construction_data = TriangulationDescription::Utilities::create_description_from_triangulation(mesh_serial, MPI_COMM_WORLD);
         triangulation.create_triangulation(construction_data);
@@ -46,68 +44,27 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         pcout << " Number of quadrature points\t: " << quadrature->size() << std::endl;
     }
 
-    // Re-initialize the DoF-Handler, and distribute the degrees of freedom across the triangulation (mesh).
-    {
-        pcout << " Creating the DoF handler..." << std::endl;
-        dof_handler.reinit(triangulation);
-        dof_handler.distribute_dofs(*fe);
-
-        locally_owned_dofs = dof_handler.locally_owned_dofs();
-        DoFTools::extract_locally_relevant_dofs(dof_handler, locally_relevant_dofs);
-        pcout << " Number of degrees of freedom\t: " << dof_handler.n_dofs() << std::endl;
-    }
-
-    // Build the linear algebra terms: matrices (via the DynamicSparsityPattern object) and vectors
-    {
-        pcout << " Building the matrices..." << std::endl;
-        TrilinosWrappers::SparsityPattern sparsity(locally_owned_dofs, MPI_COMM_WORLD);
-        DoFTools::make_sparsity_pattern(dof_handler, sparsity);
-        sparsity.compress();
-
-
-        mass_matrix.reinit(sparsity);
-        laplace_matrix.reinit(sparsity);
-        matrix_u.reinit(sparsity);
-        matrix_v.reinit(sparsity);
-
-        pcout << " Building the vectors..." << std::endl;
-
-        rhs.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-        tmp.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-        forcing_terms.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-        
-        solution_u.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
-        solution_u_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-
-        solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
-        solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-
-        old_solution_u.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
-        old_solution_u_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-
-        old_solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
-        old_solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-
-        
-
-    }
+    complete_setup();
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::setup()
+void WaveEquationParallel<dim>::setup(const unsigned int& times)
 {
     pcout << " WAVESERIAL - GENERATING MESH" << std::endl;
     pcout << " ======================================== " << std::endl;
 
-
-    // Create the mesh. The mesh is created by reading the input file, passed as a parameter
     {
         pcout << " Creating mesh..." << std::endl;
         
-        GridGenerator::hyper_cube(triangulation, -1, 1);
-        triangulation.refine_global(7);
+        Triangulation<dim> serial_triangulation;
+
+        GridGenerator::hyper_cube(serial_triangulation, 0, 1);
+        serial_triangulation.refine_global(times);
         
-        pcout << " Number of elements\t: " << triangulation.n_active_cells() << std::endl;
+        pcout << " Number of elements\t: " << serial_triangulation.n_active_cells() << std::endl;
+        GridTools::partition_triangulation(mpi_size, serial_triangulation);
+        const auto construction_data = TriangulationDescription::Utilities::create_description_from_triangulation(serial_triangulation, MPI_COMM_WORLD);
+        triangulation.create_triangulation(construction_data);
     }   
 
     // Build the finite element space. We use rectangular elements with polinomials of degree 'degree'.
@@ -174,9 +131,6 @@ void WaveEquationParallel<dim>::complete_setup()
 
         old_solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         old_solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-
-        
-
     }
 
 pcout << " ======================================== " << std::endl;
@@ -184,83 +138,64 @@ pcout << " ======================================== " << std::endl;
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::assemble_matrices(const bool& builtin)
+void WaveEquationParallel<dim>::assemble_matrices()
 {
-    // Make pcout of bools be true/false
-    //std::boolalpha(pcout);
 
     pcout << " WAVEPARALLEL - ASSEMBLING MATRICES." << std::endl;
     pcout << " ======================================== " << std::endl;
 
-    if (builtin)
+    const unsigned int dofs_per_cell = fe->dofs_per_cell;
+    const unsigned int quadrature_points = quadrature->size();
+
+    FEValues fe_values(
+        *fe,
+        *quadrature,
+        update_values | update_gradients | update_JxW_values | update_quadrature_points
+    );
+
+    FullMatrix<double> cell_mass_matrix(dofs_per_cell);
+    FullMatrix<double> cell_laplace_matrix(dofs_per_cell);
+
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+    mass_matrix = 0.0;
+    laplace_matrix = 0.0;
+
+    for (const auto& cell : dof_handler.active_cell_iterators())
     {
-        // MatrixCreator::create_mass_matrix(
-        //     dof_handler,
-        //     *quadrature,
-        //     mass_matrix
-        // );
+        if (!cell->is_locally_owned())
+            continue;
 
-        // MatrixCreator::create_laplace_matrix(
-        //     dof_handler,
-        //     *quadrature,
-        //     laplace_matrix
-        // );
-    }
-    else
-    {
-        const unsigned int dofs_per_cell = fe->dofs_per_cell;
-        const unsigned int quadrature_points = quadrature->size();
+        fe_values.reinit(cell);
 
-        FEValues fe_values(
-            *fe,
-            *quadrature,
-            update_values | update_gradients | update_JxW_values | update_quadrature_points
-        );
+        cell_mass_matrix = 0.0;
+        cell_laplace_matrix = 0.0;
 
-        FullMatrix<double> cell_mass_matrix(dofs_per_cell);
-        FullMatrix<double> cell_laplace_matrix(dofs_per_cell);
-
-        std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-        mass_matrix = 0.0;
-        laplace_matrix = 0.0;
-
-        for (const auto& cell : dof_handler.active_cell_iterators())
+        for (unsigned int q = 0; q < quadrature_points; ++q)
         {
-            if (!cell->is_locally_owned())
-                continue;
-
-            fe_values.reinit(cell);
-
-            cell_mass_matrix = 0.0;
-            cell_laplace_matrix = 0.0;
-
-            for (unsigned int q = 0; q < quadrature_points; ++q)
+            for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
-                for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
-                    for (unsigned int j = 0; j < dofs_per_cell; ++j)
-                    {
-                        cell_mass_matrix(i, j) +=
-                            fe_values.shape_value(i, q) *
-                            fe_values.shape_value(j, q) *
-                            fe_values.JxW(q);
+                    cell_mass_matrix(i, j) +=
+                        fe_values.shape_value(i, q) *
+                        fe_values.shape_value(j, q) *
+                        fe_values.JxW(q);
 
-                        cell_laplace_matrix(i, j) +=
-                            fe_values.shape_grad(i, q) *
-                            fe_values.shape_grad(j, q) *
-                            fe_values.JxW(q);
-                    }
+                    cell_laplace_matrix(i, j) +=
+                        fe_values.shape_grad(i, q) *
+                        fe_values.shape_grad(j, q) *
+                        fe_values.JxW(q);
                 }
             }
-
-            cell->get_dof_indices(local_dof_indices);
-            mass_matrix.add(local_dof_indices, cell_mass_matrix);
-            laplace_matrix.add(local_dof_indices, cell_laplace_matrix);
         }
-        mass_matrix.compress(VectorOperation::add);
-        laplace_matrix.compress(VectorOperation::add);
+
+        cell->get_dof_indices(local_dof_indices);
+        mass_matrix.add(local_dof_indices, cell_mass_matrix);
+        laplace_matrix.add(local_dof_indices, cell_laplace_matrix);
     }
+    mass_matrix.compress(VectorOperation::add);
+    laplace_matrix.compress(VectorOperation::add);
 }
 
 template <unsigned int dim>
@@ -301,11 +236,11 @@ void WaveEquationParallel<dim>::run()
     while (time < interval)
     {
         
-        pcout << "TIME: " << time + time_step << std::endl;
+        pcout << "Time\t: " << time + time_step << std::endl;
         time += time_step;
         time_step_number = time_step_number + 1;
 
-        compute_forcing_terms(time, false);
+        compute_forcing_terms(time);
 
         assemble_u(time);
 
@@ -324,7 +259,7 @@ void WaveEquationParallel<dim>::run()
         output_results();
 
         const double energy = mass_matrix.matrix_norm_square(solution_v_owned) / 2.0 + laplace_matrix.matrix_norm_square(solution_u_owned) / 2.0;
-        pcout << "Energy\t: " << energy << std::endl;
+        pcout << " Energy : " << energy << std::endl;
 
     }
 }
@@ -435,61 +370,54 @@ void WaveEquationParallel<dim>::assemble_v(const double& time)
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::compute_forcing_terms(const double& time, const bool& builtin)
+void WaveEquationParallel<dim>::compute_forcing_terms(const double& time)
 {
 
-    if (builtin)
+    const unsigned int dofs_per_cell = fe->dofs_per_cell;
+    const unsigned int quadrature_points = quadrature->size();
+
+    FEValues<dim> fe_values(
+        *fe,
+        *quadrature,
+        update_values | update_JxW_values | update_quadrature_points
+    );
+
+
+    Vector<double> cell_forcing_terms(dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+
+    forcing_terms = 0.0;
+    for (const auto& cell : dof_handler.active_cell_iterators())
     {
-        // TODO: add builtin use of VectorTools::create_right_hand_side.
-        // Attention when using the time parameter which must be set!!!
-    }
-    else
-    {
-        const unsigned int dofs_per_cell = fe->dofs_per_cell;
-        const unsigned int quadrature_points = quadrature->size();
+        if (!cell->is_locally_owned())
+            continue;
+        
+        fe_values.reinit(cell);
+        cell_forcing_terms = 0.0;
 
-        FEValues<dim> fe_values(
-            *fe,
-            *quadrature,
-            update_values | update_JxW_values | update_quadrature_points
-        );
-
-
-        Vector<double> cell_forcing_terms(dofs_per_cell);
-        std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-
-        forcing_terms = 0.0;
-        for (const auto& cell : dof_handler.active_cell_iterators())
+        for (unsigned int q = 0; q < quadrature_points; ++q)
         {
-            if (!cell->is_locally_owned())
-                continue;
+            forcing_term.set_time(time);
+            double forcing_term_value_new = forcing_term.value(fe_values.quadrature_point(q));
             
-            fe_values.reinit(cell);
-            cell_forcing_terms = 0.0;
+            forcing_term.set_time(time - time_step);
+            double forcing_term_value_old = forcing_term.value(fe_values.quadrature_point(q));
 
-            for (unsigned int q = 0; q < quadrature_points; ++q)
+            for(unsigned int i = 0; i < dofs_per_cell; ++i)
             {
-                forcing_term.set_time(time);
-                double forcing_term_value_new = forcing_term.value(fe_values.quadrature_point(q));
-                
-                forcing_term.set_time(time - time_step);
-                double forcing_term_value_old = forcing_term.value(fe_values.quadrature_point(q));
-
-                for(unsigned int i = 0; i < dofs_per_cell; ++i)
-                {
-                    cell_forcing_terms(i) +=
-                        ( theta * forcing_term_value_new + (1.0 - theta) * forcing_term_value_old) *
-                        fe_values.shape_value(i, q) *
-                        fe_values.JxW(q); 
-                }
+                cell_forcing_terms(i) +=
+                    ( theta * forcing_term_value_new + (1.0 - theta) * forcing_term_value_old) *
+                    fe_values.shape_value(i, q) *
+                    fe_values.JxW(q); 
             }
-
-            cell->get_dof_indices(local_dof_indices);
-            forcing_terms.add(local_dof_indices, cell_forcing_terms);
         }
-        forcing_terms.compress(VectorOperation::add);
+
+        cell->get_dof_indices(local_dof_indices);
+        forcing_terms.add(local_dof_indices, cell_forcing_terms);
     }
+    forcing_terms.compress(VectorOperation::add);
+
 }
 
 template <unsigned int dim>
