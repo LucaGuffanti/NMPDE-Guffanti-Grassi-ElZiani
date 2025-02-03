@@ -188,6 +188,7 @@ protected:
      * of the each equation. This function is called once per iteration as the forcing term
      * remains equal, entering the equation effectively scaled by a constant.
      * 
+     * @param time time of the current iteration
      */
     void compute_forcing_terms(const double& time);
 

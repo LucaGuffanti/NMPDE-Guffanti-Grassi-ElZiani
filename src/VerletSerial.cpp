@@ -44,7 +44,7 @@ void VerletSerial<dim>::setup(const std::string &mesh_file)
 }
 
 template <unsigned int dim>
-void VerletSerial<dim>::setup()
+void VerletSerial<dim>::setup(const unsigned int& times)
 {
     std::cout << " ======================================== " << std::endl;
     std::cout << " Verlet - GENERATING MESH" << std::endl;
@@ -54,8 +54,8 @@ void VerletSerial<dim>::setup()
     // Create the mesh. The mesh is created by reading the input file, passed as a parameter
     {
         std::cout << " Creating mesh..." << std::endl;
-        GridGenerator::hyper_cube(triangulation, -1, 1);
-        triangulation.refine_global(4);
+        GridGenerator::hyper_cube(triangulation, 0, 1);
+        triangulation.refine_global(times);
 
         std::cout << " Number of elements\t: " << triangulation.n_active_cells() << std::endl;
     }   
@@ -119,81 +119,54 @@ std::cout << " ======================================== " << std::endl;
 }
 
 template <unsigned int dim>
-void VerletSerial<dim>::assemble_matrices(const bool& builtin)
+void VerletSerial<dim>::assemble_matrices()
 {
-    // Make std::cout of bools be true/false
-    std::boolalpha(std::cout);
+    const unsigned int dofs_per_cell = fe->dofs_per_cell;
+    const unsigned int quadrature_points = quadrature->size();
 
-    std::cout << " ======================================== " << std::endl;
-    std::cout << " Verlet - ASSEMBLING MATRICES." << std::endl;
-    std::cout << " Using builtin methods\t: " << builtin << std::endl;
-    std::cout << " ======================================== " << std::endl;
+    FEValues fe_values(
+        *fe,
+        *quadrature,
+        update_values | update_gradients | update_JxW_values | update_quadrature_points
+    );
 
-    if (builtin)
+    FullMatrix<double> cell_mass_matrix(dofs_per_cell);
+    FullMatrix<double> cell_laplace_matrix(dofs_per_cell);
+
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+    mass_matrix = 0.0;
+    laplace_matrix = 0.0;
+
+    for (const auto& cell : dof_handler.active_cell_iterators())
     {
-        MatrixCreator::create_mass_matrix(
-            dof_handler,
-            *quadrature,
-            mass_matrix
-        );
+        fe_values.reinit(cell);
+        cell_mass_matrix = 0.0;
+        cell_laplace_matrix = 0.0;
 
-        MatrixCreator::create_laplace_matrix(
-            dof_handler,
-            *quadrature,
-            laplace_matrix
-        );
-    }
-    else
-    {
-        const unsigned int dofs_per_cell = fe->dofs_per_cell;
-        const unsigned int quadrature_points = quadrature->size();
-
-        FEValues fe_values(
-            *fe,
-            *quadrature,
-            update_values | update_gradients | update_JxW_values | update_quadrature_points
-        );
-
-        FullMatrix<double> cell_mass_matrix(dofs_per_cell);
-        FullMatrix<double> cell_laplace_matrix(dofs_per_cell);
-
-        std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-        mass_matrix = 0.0;
-        laplace_matrix = 0.0;
-
-        for (const auto& cell : dof_handler.active_cell_iterators())
+        for (unsigned int q = 0; q < quadrature_points; ++q)
         {
-            fe_values.reinit(cell);
-            cell_mass_matrix = 0.0;
-            cell_laplace_matrix = 0.0;
-
-            for (unsigned int q = 0; q < quadrature_points; ++q)
+            for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
-                for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
-                    for (unsigned int j = 0; j < dofs_per_cell; ++j)
-                    {
-                        cell_mass_matrix(i, j) +=
-                            fe_values.shape_value(i, q) *
-                            fe_values.shape_value(j, q) *
-                            fe_values.JxW(q);
+                    cell_mass_matrix(i, j) +=
+                        fe_values.shape_value(i, q) *
+                        fe_values.shape_value(j, q) *
+                        fe_values.JxW(q);
 
-                        cell_laplace_matrix(i, j) +=
-                            fe_values.shape_grad(i, q) *
-                            fe_values.shape_grad(j, q) *
-                            fe_values.JxW(q);
-                    }
+                    cell_laplace_matrix(i, j) +=
+                        fe_values.shape_grad(i, q) *
+                        fe_values.shape_grad(j, q) *
+                        fe_values.JxW(q);
                 }
             }
-
-            cell->get_dof_indices(local_dof_indices);
-            mass_matrix.add(local_dof_indices, cell_mass_matrix);
-            laplace_matrix.add(local_dof_indices, cell_laplace_matrix);
         }
+
+        cell->get_dof_indices(local_dof_indices);
+        mass_matrix.add(local_dof_indices, cell_mass_matrix);
+        laplace_matrix.add(local_dof_indices, cell_laplace_matrix);
     }
-    //std::cout << "MassMat: " << mass_matrix.l1_norm() << std::endl;
-    std::cout << " ======================================== " << std::endl;
 }
 
 template <unsigned int dim>
@@ -207,7 +180,6 @@ void VerletSerial<dim>::run()
     // First, initialize the solution vectors
     initial_u.set_time(0.0);
     initial_v.set_time(0.0);
-    initial_a.set_time(0.0);
 
     // Interpolate the initial conditions onto the u vector
     VectorTools::interpolate(
@@ -258,7 +230,6 @@ void VerletSerial<dim>::run()
 
         solution_u += tmp;
 
-
         compute_acceleration(time);
 
         // compute v_i+1 = v_i + a_i delta_t/2 + a_i+1 delta_t / 2
@@ -289,59 +260,51 @@ void VerletSerial<dim>::run()
 }
 
 template <unsigned int dim>
-void VerletSerial<dim>::compute_forcing_terms(const double& time, const bool& builtin)
+void VerletSerial<dim>::compute_forcing_terms(const double& time)
 {
 
-    if (builtin)
+    const unsigned int dofs_per_cell = fe->dofs_per_cell;
+    const unsigned int quadrature_points = quadrature->size();
+
+    FEValues<dim> fe_values(
+        *fe,
+        *quadrature,
+        update_values | update_JxW_values | update_quadrature_points
+    );
+
+
+    Vector<double> cell_forcing_terms(dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+
+    forcing_terms = 0.0;
+    for (const auto& cell : dof_handler.active_cell_iterators())
     {
-        // TODO: add builtin use of VectorTools::create_right_hand_side.
-        // Attention when using the time parameter which must be set!!!
-    }
-    else
-    {
-        const unsigned int dofs_per_cell = fe->dofs_per_cell;
-        const unsigned int quadrature_points = quadrature->size();
+        fe_values.reinit(cell);
+        cell_forcing_terms = 0.0;
 
-        FEValues<dim> fe_values(
-            *fe,
-            *quadrature,
-            update_values | update_JxW_values | update_quadrature_points
-        );
-
-
-        Vector<double> cell_forcing_terms(dofs_per_cell);
-        std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-
-        forcing_terms = 0.0;
-        for (const auto& cell : dof_handler.active_cell_iterators())
+        for (unsigned int q = 0; q < quadrature_points; ++q)
         {
-            fe_values.reinit(cell);
-            cell_forcing_terms = 0.0;
+            forcing_term.set_time(time);
+            double forcing_term_value_old = forcing_term.value(fe_values.quadrature_point(q));
 
-            for (unsigned int q = 0; q < quadrature_points; ++q)
+            for(unsigned int i = 0; i < dofs_per_cell; ++i)
             {
-                forcing_term.set_time(time);
-                double forcing_term_value_old = forcing_term.value(fe_values.quadrature_point(q));
-
-                for(unsigned int i = 0; i < dofs_per_cell; ++i)
-                {
-                    cell_forcing_terms(i) += forcing_term_value_old *
-                        fe_values.shape_value(i, q) *
-                        fe_values.JxW(q); 
-                }
+                cell_forcing_terms(i) += forcing_term_value_old *
+                    fe_values.shape_value(i, q) *
+                    fe_values.JxW(q); 
             }
-
-            cell->get_dof_indices(local_dof_indices);
-            forcing_terms.add(local_dof_indices, cell_forcing_terms);
         }
+
+        cell->get_dof_indices(local_dof_indices);
+        forcing_terms.add(local_dof_indices, cell_forcing_terms);
     }
 }
 
 template <unsigned int dim>
 void VerletSerial<dim>::compute_acceleration(const double& time)
 {
-    compute_forcing_terms(time, false);
+    compute_forcing_terms(time);
 
     tmp = 0.0;
     rhs = forcing_terms;
@@ -351,14 +314,14 @@ void VerletSerial<dim>::compute_acceleration(const double& time)
     // apply the domain
 
     lhs.copy_from(mass_matrix);
-    BoundaryA boundary_values_a;
-    boundary_values_a.set_time(time);
+    BoundaryU boundary_values_u;
+    boundary_values_u.set_time(time);
     std::map<types::global_dof_index, double> boundary_values;
     for (unsigned int i=0; i <4 ; i++){
         VectorTools::interpolate_boundary_values(
             dof_handler,
             i,
-            boundary_values_a,
+            boundary_values_u,
             boundary_values
         );
     }
@@ -370,7 +333,7 @@ void VerletSerial<dim>::compute_acceleration(const double& time)
     );
 
     // Solve the system M a_i = rhs
-    SolverControl solver_control(1000, 1e-6 * rhs.l2_norm());
+    SolverControl solver_control(1000, 1e-12);
     SolverCG<Vector<double>> solver(solver_control);
     solver.solve(lhs, a_old, rhs, PreconditionIdentity());
 

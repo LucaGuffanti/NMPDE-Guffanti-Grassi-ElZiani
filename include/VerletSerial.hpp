@@ -59,8 +59,9 @@ public:
     /**
      * @brief Constructs the triangulation, finite element space, DoF handler and linear algebra,
      * utilising deal.ii mesh generation infrastructure.
+     * @param times Number of times the mesh will be refined
      */
-    void setup();
+    void setup(const unsigned int& times);
 
     /**
      * @brief Completes the construction of the problem by assembling objects that do not directly depend
@@ -71,15 +72,11 @@ public:
     /**
      * @brief Constructs the mass matrix and laplace matrix for the problem. 
      * 
-     * @param builtin Whether to use the builtin methods rather then computing the matrices manually.
      */
-    void assemble_matrices(const bool& builtin = false);
+    void assemble_matrices();
 
     /**
-     * @brief Runs the solver by iteratively computing the right hand side of the position equation
-     * (u), solving the first system of equations (u_n+1) with the conjugate gradient method,
-     * computing the right hand side of the velocity equation with the newly produced u_n+1,
-     * and solving it by applying the conjugate gradient method. 
+     * @brief Runs the solver by applying the Verlet integration scheme at each time step
      */
     void run();
 
@@ -105,7 +102,7 @@ public:
     public:
         InitialU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -123,26 +120,7 @@ public:
     public:
         InitialV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
-        {
-            return 0.0;
-        }
-
-    };
-
-
-    /**
-     * @brief Class describing the initialization value of the acceleration of each point in the computational
-     * domain.
-     * 
-     * @tparam dim number of physical dimensions of the problem
-     */
-    class InitialA : public Function<dim>
-    {
-    public:
-        InitialA(){}
-
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -158,25 +136,9 @@ public:
     public:
         BoundaryU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
-            //Boundary no setup
-            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            (p[1] > -1. / 3))
-            {
-                return std::sin(10*this->get_time());
-            }
-            else
-                return 0;
-
-            // //boundary Setup
-            // if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            // (p[1] < 3. / 4))
-            // {   
-            //     return std::sin(10*this->get_time());
-            // }
-            // else
-            //     return 0;
+            return 0.0;
         }
 
     };
@@ -191,56 +153,9 @@ public:
     public:
         BoundaryV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
-            //Boundary no setup
-            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            (p[1] > -1. / 3))
-            {
-                return 10*std::cos(10*this->get_time());
-            }
-            else
-                return 0;
-
-            // //Boundary setup
-            // if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            // (p[1] < 3. / 4))
-            // {
-            //    return 10*std::cos(10*this->get_time());
-            // }
-            // else
-            //     return 0;
-        }
-
-    };
-
-    class BoundaryA : public Function<dim>
-    {
-    public:
-        BoundaryA(){}
-
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
-        {
-            return 0;
-            //Boundary no setup
-            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            (p[1] > -1. / 3))
-            {
-                return -100*std::sin(10*this->get_time());
-            }
-            else
-                return 0;
-
-            
-            // // Boundary setup
-            // if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            // (p[1] < 3. / 4))
-            // {
-            //    return -100*std::sin(10*this->get_time());
-            // }
-            // else
-            //     return 0;
-
+            return 0.0;
         }
 
     };
@@ -255,14 +170,11 @@ public:
     public:
         ForcingTerm(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& p, const unsigned int /*component*/ = 0) const override
         {
-            if ((this->get_time() <= 0.5) && p[0] >= 0.5 && p[0] <= 0.6 && p[1] >= 0.5 && p[1] <= 0.6)
-            {
-                return 1.0;
-            }
-            else
-                return 0;
+            if (this->get_time() <= 0.5 && ((p[0]-0.5)*(p[0]-0.5) + (p[1]-0.5)*(p[1]-0.5)) <= 0.0025)
+                return 3.0;
+            return 0;
         }
 
     };
@@ -274,10 +186,15 @@ protected:
      * of the each equation. This function is called once per iteration as the forcing term
      * remains equal, entering the equation effectively scaled by a constant.
      * 
+     * @param time time of the current iteration
      */
-    void compute_forcing_terms(const double& time, const bool& builtin = false);
+    void compute_forcing_terms(const double& time);
 
-    
+    /**
+     * @brief Computes the acceleration term for the Verlet algorithm
+     * 
+     * @param time time of the current iteration
+     */
     void compute_acceleration(const double& time);
 
 
@@ -301,11 +218,9 @@ protected:
 
     InitialU initial_u;
     InitialV initial_v;
-    InitialA initial_a;
 
     BoundaryU boundary_u;
     BoundaryV boundary_v;
-    BoundaryA boundary_a;
 
     ForcingTerm forcing_term;
 
@@ -350,8 +265,5 @@ protected:
     Vector<double> tmp;
 
 };
-
-
-
 
 #endif // VERLET_SERIAL_HPP
