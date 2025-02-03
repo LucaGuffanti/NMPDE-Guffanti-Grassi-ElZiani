@@ -60,7 +60,7 @@ public:
      * @brief Constructs the triangulation, finite element space, DoF handler and linear algebra,
      * utilising deal.ii mesh generation infrastructure.
      */
-    void setup();
+    void setup(const unsigned int& times=1);
 
     /**
      * @brief Completes the construction of the problem by assembling objects that do not directly depend
@@ -71,9 +71,8 @@ public:
     /**
      * @brief Constructs the mass matrix and laplace matrix for the problem. 
      * 
-     * @param builtin Whether to use the builtin methods rather then computing the matrices manually.
      */
-    void assemble_matrices(const bool& builtin = false);
+    void assemble_matrices();
 
     /**
      * @brief Runs the solver by iteratively computing the right hand side of the position equation
@@ -93,8 +92,8 @@ public:
     ,   time_step (time_step_)
     ,   mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
     ,   mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
-    ,   pcout(std::cout, mpi_rank == 0)
     ,   triangulation(MPI_COMM_WORLD)
+    ,   pcout(std::cout, mpi_rank == 0)
     {}
 
     /**
@@ -108,7 +107,7 @@ public:
     public:
         InitialU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -126,7 +125,7 @@ public:
     public:
         InitialV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -142,7 +141,7 @@ public:
     public:
         BoundaryU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {   
             return 0.0;
         }
@@ -159,7 +158,7 @@ public:
     public:
         BoundaryV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -176,16 +175,12 @@ public:
     public:
         ForcingTerm(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& p, const unsigned int /*component*/ = 0) const override
         {
-            if ((this->get_time() <= 0.5) && (p[0] >= 0.5 && p[0] <= 0.6 && p[1] >= 0.5 && p[1] <= 0.6) || (p[0] >= 0.2 && p[0] <= 0.3 && p[1] >= 0.2 && p[1] <= 0.3))
-            {
-                return 2.0;
-            }
-            else
-                return 0;
+            if (this->get_time() <= 0.5 && ((p[0]-0.5)*(p[0]-0.5) + (p[1]-0.5)*(p[1]-0.5)) <= 0.0025)
+                return 3.0;
+            return 0;
         }
-
     };
 
 protected:
@@ -196,8 +191,13 @@ protected:
      * remains equal, entering the equation effectively scaled by a constant.
      * 
      */
-    void compute_forcing_terms(const double& time, const bool& builtin = false);
+    void compute_forcing_terms(const double& time);
 
+    /**
+     * @brief Computes the acceleration term for the Verlet algorithm
+     * 
+     * @param time time of the current iteration
+     */
     void compute_acceleration(const double& time);
 
     /**
