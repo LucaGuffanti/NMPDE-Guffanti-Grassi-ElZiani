@@ -36,6 +36,9 @@
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/matrix_tools.h>
 
+// Timing
+#include <deal.II/base/timer.h>
+
 // STL libraries
 #include <iostream>
 #include <fstream>
@@ -52,15 +55,17 @@ public:
     /**
      * @brief Constructs the triangulation, finite element space, DoF handler and linear algebra,
      * utilising a mesh file passed as input.
-     * @param mesh_filename Path to the mesh file
+     * @param mesh_filename Path to the mesh file.
      */
     void setup(const std::string& mesh_filename);
 
     /**
      * @brief Constructs the triangulation, finite element space, DoF handler and linear algebra,
      * utilising deal.ii mesh generation infrastructure.
+     * 
+     * @param times Number of times the mesh will be refined.
      */
-    void setup();
+    void setup(const unsigned int& times=1);
 
     /**
      * @brief Completes the construction of the problem by assembling objects that do not directly depend
@@ -71,9 +76,8 @@ public:
     /**
      * @brief Constructs the mass matrix and laplace matrix for the problem. 
      * 
-     * @param builtin Whether to use the builtin methods rather then computing the matrices manually.
      */
-    void assemble_matrices(const bool& builtin = false);
+    void assemble_matrices();
 
     /**
      * @brief Runs the solver by iteratively computing the right hand side of the position equation
@@ -82,6 +86,8 @@ public:
      * and solving it by applying the conjugate gradient method. 
      */
     void run();
+
+    void print_timer_data() const;
 
     WaveEquationParallel(
         const unsigned int& degree_,
@@ -95,8 +101,9 @@ public:
     ,   theta (theta_)
     ,   mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
     ,   mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
-    ,   pcout(std::cout, mpi_rank == 0)
     ,   triangulation(MPI_COMM_WORLD)
+    ,   pcout(std::cout, mpi_rank == 0)
+    ,   timer(pcout, TimerOutput::summary, TimerOutput::wall_times)
     {}
 
     /**
@@ -110,7 +117,7 @@ public:
     public:
         InitialU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -128,7 +135,7 @@ public:
     public:
         InitialV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -144,27 +151,9 @@ public:
     public:
         BoundaryU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {   
-            
-            //Boundary no setup
-            // if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            // (p[1] > -1. / 3))
-            // {
-            //     return std::sin(10*this->get_time());
-            // }
-            // else
-            //     return 0;
-
-            ///return 10;
-            //boundary Setup
-            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            (p[1] < 3. / 4))
-            {   
-                return std::sin(10*this->get_time());
-            }
-            else
-                return 0;
+            return 0.0;
         }
 
     };
@@ -179,25 +168,9 @@ public:
     public:
         BoundaryV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
-            //Boundary no setup
-            // if ((this->get_time() <= 0.5) && (p[0] <= 0) && (p[1] < 1. / 3) &&
-            // (p[1] > -1. / 3))
-            // {
-            //     return 10*std::cos(10*this->get_time());
-            // }
-            // else
-            //     return 0;
-            //return 0;
-            //Boundary setup
-            if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            (p[1] < 3. / 4))
-            {
-               return 10*std::cos(10*this->get_time());
-            }
-            else
-                return 0;
+            return 0.0;
         }
 
     };
@@ -212,14 +185,11 @@ public:
     public:
         ForcingTerm(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& p, const unsigned int /*component*/ = 0) const override
         {
-            /*if (this->get_time() <= 1.0 && p[0] < 0.5 && p[0] > -0.5)
-            {
-                return 0.1 * std::sin(this->get_time()) * std::exp(-this->get_time()) + 1;
-            }
-            else*/
-                return 0;
+            if (this->get_time() <= 0.5 && ((p[0]-0.5)*(p[0]-0.5) + (p[1]-0.5)*(p[1]-0.5)) <= 0.0025)
+                return 3.0;
+            return 0;
         }
 
     };
@@ -245,8 +215,9 @@ protected:
      * of the each equation. This function is called once per iteration as the forcing term
      * remains equal, entering the equation effectively scaled by a constant.
      * 
+     * @param time time of the current iteration
      */
-    void compute_forcing_terms(const double& time, const bool& builtin = false);
+    void compute_forcing_terms(const double& time);
 
     /**
      * @brief Solves the position equation with the conjugate gradient method
@@ -354,9 +325,7 @@ protected:
     // =========================================
     ConditionalOStream pcout;
 
-
-
-    bool customSetup=false;
+    TimerOutput timer;
 };
 
 

@@ -1,15 +1,15 @@
-#include "WaveSerial.hpp"
+#include "VerletSerial.hpp"
 
 // ========================================================
 // ==================== IMPLEMENTATION ====================
 // ========================================================
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::setup(const std::string &mesh_file)
+void VerletSerial<dim>::setup(const std::string &mesh_file)
 {
 
     std::cout << " ======================================== " << std::endl;
-    std::cout << " WAVESERIAL - SETUP (FROM FILE) " << std::endl;
+    std::cout << " Verlet - SETUP (FROM FILE) " << std::endl;
     std::cout << " ======================================== " << std::endl;
 
 
@@ -43,10 +43,10 @@ void WaveEquationSerial<dim>::setup(const std::string &mesh_file)
 }
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::setup(const unsigned int& times)
+void VerletSerial<dim>::setup(const unsigned int& times)
 {
     std::cout << " ======================================== " << std::endl;
-    std::cout << " WAVESERIAL - GENERATING MESH" << std::endl;
+    std::cout << " Verlet - GENERATING MESH" << std::endl;
     std::cout << " ======================================== " << std::endl;
 
 
@@ -77,7 +77,7 @@ void WaveEquationSerial<dim>::setup(const unsigned int& times)
 }
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::complete_setup()
+void VerletSerial<dim>::complete_setup()
 {
     
     // Re-initialize the DoF-Handler, and distribute the degrees of freedom across the triangulation (mesh).
@@ -98,14 +98,15 @@ void WaveEquationSerial<dim>::complete_setup()
 
         mass_matrix.reinit(sparsity_pattern);
         laplace_matrix.reinit(sparsity_pattern);
-        matrix_u.reinit(sparsity_pattern);
-        matrix_v.reinit(sparsity_pattern);
+        lhs.reinit(sparsity_pattern);
 
         std::cout << " Building the vectors..." << std::endl;
         solution_u.reinit(dof_handler.n_dofs());
         solution_v.reinit(dof_handler.n_dofs());
         old_solution_u.reinit(dof_handler.n_dofs());
         old_solution_v.reinit(dof_handler.n_dofs());
+        a_old.reinit(dof_handler.n_dofs());
+        a_new.reinit(dof_handler.n_dofs());
         rhs.reinit(dof_handler.n_dofs());
         forcing_terms.reinit(dof_handler.n_dofs());
         tmp.reinit(dof_handler.n_dofs());
@@ -116,7 +117,7 @@ std::cout << " ======================================== " << std::endl;
 }
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::assemble_matrices()
+void VerletSerial<dim>::assemble_matrices()
 {
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
     const unsigned int quadrature_points = quadrature->size();
@@ -167,11 +168,11 @@ void WaveEquationSerial<dim>::assemble_matrices()
 }
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::run()
+void VerletSerial<dim>::run()
 {
 
     std::cout << " ======================================== " << std::endl;
-    std::cout << " WAVESERIAL - SOLVING THE PROBLEM." << std::endl;
+    std::cout << " Verlet - SOLVING THE PROBLEM." << std::endl;
     std::cout << " ======================================== " << std::endl;
 
     // First, initialize the solution vectors
@@ -192,127 +193,72 @@ void WaveEquationSerial<dim>::run()
         old_solution_v
     );
 
+    solution_u = old_solution_u;
+    solution_v = old_solution_v;
+
     // Now, we start the time loop
     time_step_number = 0;
     time = 0.0;
 
+    old_solution_v = solution_v;
+    old_solution_u = solution_u;
+
     output_results();
+
+    compute_acceleration(time);
+    a_old = a_new;
 
     while (time < interval)
     {
         
-        std::cout << "TIME: " << time << std::endl;
         time += time_step;
         time_step_number = time_step_number + 1;
+        std::cout << "Time\t: " << time << std::endl;
 
-        compute_forcing_terms(time);
+        // Compute u_i+1 = u_i + v_i delta_t + a_i * delta_t^2/2
+        solution_u = old_solution_u;
 
-        assemble_u(time);
+        tmp = old_solution_v;
+        tmp *= time_step;
 
-        solve_u();
+        solution_u += tmp;
 
-        assemble_v(time);
+        tmp = a_old;
+        tmp *= time_step * time_step / 2.0;
 
-        solve_v();
+        solution_u += tmp;
+
+        compute_acceleration(time);
+
+        // compute v_i+1 = v_i + a_i delta_t/2 + a_i+1 delta_t / 2
+        solution_v = old_solution_v;
+
+        tmp = a_old;
+        tmp *= time_step / 2.0;
+
+        solution_v += tmp;
+
+        tmp = a_new;
+        tmp *= time_step / 2.0;
+
+        solution_v += tmp;
+
+        output_results();
 
         old_solution_u = solution_u;
         old_solution_v = solution_v;
+        a_old = a_new;
 
-        output_results();
+        // compute the energy
         const double energy = mass_matrix.matrix_norm_square(solution_v) / 2.0 + laplace_matrix.matrix_norm_square(solution_u) / 2.0;
-        std::cout << "Energy\t: " << energy << std::endl;
-    }
-}
-
-
-template <unsigned int dim>
-void WaveEquationSerial<dim>::assemble_u(const double& time)
-{
-    rhs = 0.0;
-    //cout << " Init:" << old_solution_u.l2_norm() << "    ";
-    // M*u_n
-    mass_matrix.vmult(rhs, old_solution_u);
-    // -delta_t^2 * theta (1-theta) * A * u_n
-    laplace_matrix.vmult(tmp, old_solution_u);
-    rhs.add(-time_step * time_step * theta * (1.0 - theta), tmp);
-    // delta_t * M * v_n
-    mass_matrix.vmult(tmp, old_solution_v);
-    rhs.add(time_step, tmp);
-    // delta_t^2 * theta * (theta * f_n+1 + (1-theta) * f_n)
-    // With (theta * f_n+1 + (1-theta) * f_n) being stored in forcing_terms.
-    tmp = forcing_terms;
-    tmp *= time_step * time_step * theta;
-    rhs.add(1.0, tmp);
-
-    // lhs = M + delta_t^2 * theta^2 * A
-    matrix_u.copy_from(mass_matrix);
-    matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
-
-    // Boundary conditions
-    BoundaryU boundary_values_u;
-    boundary_values_u.set_time(time);
-    std::map<types::global_dof_index, double> boundary_values;
-    for (unsigned int i=0; i <4 ; i++){
-        VectorTools::interpolate_boundary_values(
-            dof_handler,
-            i,
-            boundary_values_u,
-            boundary_values
-        );
-    }
-    MatrixTools::apply_boundary_values(
-        boundary_values,
-        matrix_u,
-        solution_u,
-        rhs
-    );
-
-}   
-
-template <unsigned int dim>
-void WaveEquationSerial<dim>::assemble_v(const double& time)
-{
-    // M * v_n
-    mass_matrix.vmult(rhs, old_solution_v);
-    // -delta_t * theta * A * u_n
-    laplace_matrix.vmult(tmp, solution_u);
-    rhs.add(-time_step * theta, tmp);
-    // -delta_t * (1 - theta) * A * u_n
-    laplace_matrix.vmult(tmp, old_solution_u);
-    rhs.add(-time_step * (1.0 - theta), tmp);
-    // delta_t * (theta F_n+1 + (1.0 - theta) * F_n)
-    tmp = forcing_terms;
-    tmp *= time_step;
-    rhs.add(1.0, tmp);
-
-    // lhs = M
-    matrix_v.copy_from(mass_matrix);
-
-    // Boundary conditions
-    BoundaryV boundary_values_v;
-    boundary_values_v.set_time(time);
-    std::map<types::global_dof_index, double> boundary_values;
-
-    for (unsigned int i=0; i <4 ; i++){
-        VectorTools::interpolate_boundary_values(
-            dof_handler,
-            i,
-            boundary_values_v,
-            boundary_values
-        );
+        std::cout << " Energy\t: " << energy << std::endl;
     }
 
-    MatrixTools::apply_boundary_values(
-        boundary_values,
-        matrix_v,
-        solution_v,
-        rhs
-    );
-    //cout <<"rhs pst bound: "<< rhs.l2_norm()<< std::endl;
+    
 }
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::compute_forcing_terms(const double& time)
+void VerletSerial<dim>::compute_forcing_terms(const double& time)
 {
 
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
@@ -338,15 +284,11 @@ void WaveEquationSerial<dim>::compute_forcing_terms(const double& time)
         for (unsigned int q = 0; q < quadrature_points; ++q)
         {
             forcing_term.set_time(time);
-            double forcing_term_value_new = forcing_term.value(fe_values.quadrature_point(q));
-            
-            forcing_term.set_time(time - time_step);
             double forcing_term_value_old = forcing_term.value(fe_values.quadrature_point(q));
 
             for(unsigned int i = 0; i < dofs_per_cell; ++i)
             {
-                cell_forcing_terms(i) +=
-                    ( theta * forcing_term_value_new + (1.0 - theta) * forcing_term_value_old) *
+                cell_forcing_terms(i) += forcing_term_value_old *
                     fe_values.shape_value(i, q) *
                     fe_values.JxW(q); 
             }
@@ -358,44 +300,63 @@ void WaveEquationSerial<dim>::compute_forcing_terms(const double& time)
 }
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::solve_u()
+void VerletSerial<dim>::compute_acceleration(const double& time)
 {
+    compute_forcing_terms(time);
+
+    tmp = 0.0;
+    rhs = forcing_terms;
+    laplace_matrix.vmult(tmp, solution_u);
+    rhs -= tmp;
+
+    // apply the domain
+
+    lhs.copy_from(mass_matrix);
+    BoundaryU boundary_values_u;
+    boundary_values_u.set_time(time);
+    std::map<types::global_dof_index, double> boundary_values;
+    for (unsigned int i=0; i <4 ; i++){
+        VectorTools::interpolate_boundary_values(
+            dof_handler,
+            i,
+            boundary_values_u,
+            boundary_values
+        );
+    }
+    MatrixTools::apply_boundary_values(
+        boundary_values,
+        lhs,
+        a_old,
+        rhs
+    );
+
+    // Solve the system M a_i = rhs
     SolverControl solver_control(1000, 1e-12);
     SolverCG<Vector<double>> solver(solver_control);
+    solver.solve(lhs, a_old, rhs, PreconditionIdentity());
 
-    solver.solve(matrix_u, solution_u, rhs, PreconditionIdentity());
-    std::cout << " Solution U\t: " << solver_control.last_step() << " Iterations "<< std::endl;
+    std::cout << " Solution A\t: " << solver_control.last_step() << " Iterations "<< std::endl;
 }
+
 
 template <unsigned int dim>
-void WaveEquationSerial<dim>::solve_v()
+void VerletSerial<dim>::output_results() const
 {
-    SolverControl solver_control(1000, 1e-12);
-    SolverCG<Vector<double>> solver(solver_control);
-
-    solver.solve(matrix_v, solution_v, rhs, PreconditionIdentity());
-    std::cout << " Solution V\t: " << solver_control.last_step() << " Iterations "<< std::endl;
-}
-
- 
-  template <unsigned int dim>
-  void WaveEquationSerial<dim>::output_results() const
-  {
     DataOut<dim> data_out;
- 
+
     data_out.attach_dof_handler(dof_handler);
     data_out.add_data_vector(solution_u, "U");
     data_out.add_data_vector(solution_v, "V");
- 
+
     data_out.build_patches();
- 
+
     const std::string filename =
-      "solution-" + Utilities::int_to_string(time_step_number, 3) + ".vtu";
+        "solution-" + Utilities::int_to_string(time_step_number, 3) + ".vtu";
 
     std::ofstream output(filename);
     data_out.write_vtu(output);
-  }
- 
+}
 
-template class WaveEquationSerial<2>;
-template class WaveEquationSerial<3>;
+
+template class VerletSerial<2>;
+template class VerletSerial<3>;

@@ -1,15 +1,14 @@
-#include "WaveParallel.hpp"
+#include "VerletParallel.hpp"
 
 // ========================================================
 // ==================== IMPLEMENTATION ====================
 // ========================================================
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
+void VerletParallel<dim>::setup(const std::string &mesh_file)
 {
     timer.enter_section("Setup");
-
-    pcout << " WAVEPARALLEL - SETUP (FROM FILE) " << std::endl;
+    pcout << " VerletParallel - SETUP (FROM FILE) " << std::endl;
     pcout << " ======================================== " << std::endl;
 
     // Create the mesh. The mesh is created by reading the input file, passed as a parameter
@@ -23,6 +22,7 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         std::ifstream input_file(mesh_file);
         grid_in.read_msh(input_file);
 
+    
         GridTools::partition_triangulation(mpi_size, mesh_serial);
         const auto construction_data = TriangulationDescription::Utilities::create_description_from_triangulation(mesh_serial, MPI_COMM_WORLD);
         triangulation.create_triangulation(construction_data);
@@ -34,6 +34,7 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
         pcout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_SimplexP<dim>>(degree);
         pcout << " Degree of polynomials\t: " << fe->degree << std::endl;
+        pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
 
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
@@ -48,24 +49,26 @@ void WaveEquationParallel<dim>::setup(const std::string &mesh_file)
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::setup(const unsigned int& times)
+void VerletParallel<dim>::setup(const unsigned int& times)
 {
     timer.enter_section("Setup");
     pcout << " WAVESERIAL - GENERATING MESH" << std::endl;
     pcout << " ======================================== " << std::endl;
 
+    // Create the mesh. The mesh is created by reading the input file, passed as a parameter
     {
         pcout << " Creating mesh..." << std::endl;
         
         Triangulation<dim> serial_triangulation;
-
         GridGenerator::hyper_cube(serial_triangulation, 0, 1);
         serial_triangulation.refine_global(times);
-        
+
         pcout << " Number of elements\t: " << serial_triangulation.n_active_cells() << std::endl;
+
         GridTools::partition_triangulation(mpi_size, serial_triangulation);
         const auto construction_data = TriangulationDescription::Utilities::create_description_from_triangulation(serial_triangulation, MPI_COMM_WORLD);
         triangulation.create_triangulation(construction_data);
+
     }   
 
     // Build the finite element space. We use rectangular elements with polinomials of degree 'degree'.
@@ -87,7 +90,7 @@ void WaveEquationParallel<dim>::setup(const unsigned int& times)
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::complete_setup()
+void VerletParallel<dim>::complete_setup()
 {
 
     // Re-initialize the DoF-Handler, and distribute the degrees of freedom across the triangulation (mesh).
@@ -98,7 +101,6 @@ void WaveEquationParallel<dim>::complete_setup()
 
         locally_owned_dofs = dof_handler.locally_owned_dofs();
         DoFTools::extract_locally_relevant_dofs(dof_handler, locally_relevant_dofs);
-        pcout << " Number of degrees of freedom\t: " << dof_handler.n_dofs() << std::endl;
     }
 
     // Build the linear algebra terms: matrices (via the DynamicSparsityPattern object) and vectors
@@ -111,8 +113,7 @@ void WaveEquationParallel<dim>::complete_setup()
 
         mass_matrix.reinit(sparsity);
         laplace_matrix.reinit(sparsity);
-        matrix_u.reinit(sparsity);
-        matrix_v.reinit(sparsity);
+        lhs.reinit(sparsity);
 
         pcout << " Building the vectors..." << std::endl;
 
@@ -126,11 +127,13 @@ void WaveEquationParallel<dim>::complete_setup()
         solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
-        old_solution_u.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         old_solution_u_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
-        old_solution_v.reinit(locally_owned_dofs, locally_relevant_dofs, MPI_COMM_WORLD);
         old_solution_v_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
+        a_old_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+        a_new_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
     }
     timer.exit_section("Setup");
 pcout << " ======================================== " << std::endl;
@@ -138,12 +141,10 @@ pcout << " ======================================== " << std::endl;
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::assemble_matrices()
+void VerletParallel<dim>::assemble_matrices()
 {
-
     timer.enter_section("Assemble Mass/Laplace");
-
-    pcout << " WAVEPARALLEL - ASSEMBLING MATRICES." << std::endl;
+    pcout << " VerletParallel - ASSEMBLING MATRICES." << std::endl;
     pcout << " ======================================== " << std::endl;
 
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
@@ -198,19 +199,17 @@ void WaveEquationParallel<dim>::assemble_matrices()
     }
     mass_matrix.compress(VectorOperation::add);
     laplace_matrix.compress(VectorOperation::add);
-
     timer.exit_section("Assemble Mass/Laplace");
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::run()
+void VerletParallel<dim>::run()
 {
     timer.enter_section("Run");
-    timer.enter_subsection("Init");
-
-    pcout << " WAVEPARALLEL - SOLVING THE PROBLEM." << std::endl;
+    pcout << " VerletParallel - SOLVING THE PROBLEM." << std::endl;
     pcout << " ======================================== " << std::endl;
 
+    timer.enter_subsection("Init");
     // First, initialize the solution vectors
     initial_u.set_time(0.0);
     initial_v.set_time(0.0);
@@ -221,7 +220,6 @@ void WaveEquationParallel<dim>::run()
         initial_u,
         old_solution_u_owned
     );
-    old_solution_u = old_solution_u_owned;
     solution_u = old_solution_u_owned;
 
     // Interpolate the initial conditions onto the v vector
@@ -230,170 +228,80 @@ void WaveEquationParallel<dim>::run()
         initial_v,
         old_solution_v_owned
     );
-    old_solution_v = old_solution_v_owned;
     solution_v = old_solution_v_owned;
 
-    // Now, we start the time loop
+    // Start the time loop
     time_step_number = 0;
     time = 0.0;
 
     output_results();
 
+    timer.enter_section("Compute Acceleration");
+    compute_acceleration(time);
+    timer.exit_section("Compute Acceleration");
+
+    a_old_owned = a_new_owned;
     timer.exit_section("Init");
+
+
     while (time < interval)
     {
-        
-        pcout << "Time\t: " << time + time_step << std::endl;
         time += time_step;
-        time_step_number = time_step_number + 1;
+        time_step_number += 1;
 
-        timer.enter_subsection("Forcing Terms");
-        compute_forcing_terms(time);
-        timer.exit_section("Forcing Terms");
+        pcout << "Time: " << time << std::endl;
+        
+        timer.enter_section("Solve U");
+        solution_u_owned = old_solution_u_owned;
+        tmp = old_solution_v_owned;
+        tmp *= time_step;
 
+        solution_u_owned += tmp;
 
-        timer.enter_subsection("Assemble U");
-        assemble_u(time);
-        timer.exit_section("Assemble U");
+        tmp = a_old_owned;
+        tmp *= time_step * time_step / 2.0;
 
-        timer.enter_subsection("Solve U");
-        solve_u();
+        solution_u_owned += tmp;
+        solution_u = solution_u_owned;
         timer.exit_section("Solve U");
 
-        timer.enter_subsection("Assemble V");
-        assemble_v(time);
-        timer.exit_section("Assemble V");
 
-        timer.enter_subsection("Solve V");
-        solve_v();
+        timer.enter_section("Compute Acceleration");
+        compute_acceleration(time);
+        timer.exit_section("Compute Acceleration");
+
+        timer.enter_section("Solve V");
+        solution_v_owned = old_solution_v_owned;
+        tmp = a_old_owned;
+        tmp *= time_step / 2.0;
+        solution_v_owned += tmp;
+
+        tmp = a_new_owned;
+        tmp *= time_step / 2.0;
+        solution_v_owned += tmp;
+
+        solution_v = solution_v_owned;
         timer.exit_section("Solve V");
-
-        old_solution_u_owned = solution_u_owned;
-        old_solution_v_owned = solution_v_owned;
-
-        old_solution_u = solution_u_owned;
-        old_solution_v = solution_v_owned;
 
         timer.enter_subsection("Output Results");
         output_results();
         timer.exit_section("Output Results");
 
+        old_solution_u_owned = solution_u_owned;
+        old_solution_v_owned = solution_v_owned;
+        a_old_owned = a_new_owned;
+
         timer.enter_subsection("Energy");
         const double energy = mass_matrix.matrix_norm_square(solution_v_owned) / 2.0 + laplace_matrix.matrix_norm_square(solution_u_owned) / 2.0;
-        pcout << " Energy : " << energy << std::endl;
+        pcout << "Energy\t: " << energy << std::endl;
         timer.exit_section("Energy");
 
     }
     timer.exit_section("Run");
 }
 
-
 template <unsigned int dim>
-void WaveEquationParallel<dim>::assemble_u(const double& time)
-{
-    rhs = 0.0;
-    tmp = 0.0;
-
-
-    // M*u_n
-    mass_matrix.vmult(rhs, old_solution_u_owned);
-
-    // -delta_t^2 * theta (1-theta) * A * u_n
-    laplace_matrix.vmult(tmp, old_solution_u_owned);
-    rhs.add(-time_step * time_step * theta * (1.0 - theta), tmp);
-    // delta_t * M * v_n
-    mass_matrix.vmult(tmp, old_solution_v_owned);
-    rhs.add(time_step, tmp);
-    
-    // delta_t^2 * theta * (theta * f_n+1 + (1-theta) * f_n)
-    // With (theta * f_n+1 + (1-theta) * f_n) being stored in forcing_terms.
-    tmp = forcing_terms;
-    tmp *= time_step * time_step * theta;
-    rhs.add(1.0, tmp);
-    
-    // lhs = M + delta_t^2 * theta^2 * A
-    matrix_u.copy_from(mass_matrix);
-    matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
-
-    // Boundary conditions
-    BoundaryU boundary_values_u;
-    
-    boundary_values_u.set_time(time);
-
-    std::map<types::global_dof_index, double> boundary_values;
-    std::map<types::boundary_id, const Function<dim>*> boundary_functions;
-
-
-    for (unsigned int i=0; i <4 ; i++){
-        boundary_functions[i] = &boundary_values_u;
-    }
-
-    VectorTools::interpolate_boundary_values(
-        dof_handler,
-        boundary_functions,
-        boundary_values
-    );
-    
-    MatrixTools::apply_boundary_values(
-        boundary_values,
-        matrix_u,
-        solution_u_owned,
-        rhs
-    );
-}   
-
-template <unsigned int dim>
-void WaveEquationParallel<dim>::assemble_v(const double& time)
-{
-
-    rhs = 0.0;
-    tmp = 0.0;
-    // M * v_n
-    mass_matrix.vmult(rhs, old_solution_v_owned);
-
-    // -delta_t * theta * A * u_n
-    laplace_matrix.vmult(tmp, solution_u_owned);
-    rhs.add(-time_step * theta, tmp);
-
-    // -delta_t * (1 - theta) * A * u_n
-    laplace_matrix.vmult(tmp, old_solution_u_owned);
-    rhs.add(-time_step * (1.0 - theta), tmp);
-
-    // delta_t * (theta F_n+1 + (1.0 - theta) * F_n)
-    tmp = forcing_terms;
-    tmp *= time_step;
-    rhs.add(1.0, tmp);
-
-    // lhs = M
-    matrix_v.copy_from(mass_matrix);
-
-    // Boundary conditions
-    BoundaryV boundary_values_v;
-    boundary_values_v.set_time(time);
-    std::map<types::global_dof_index, double> boundary_values;
-    std::map<types::boundary_id, const Function<dim>*> boundary_functions;
-
-    for (unsigned int i=0; i <4 ; i++)
-    {
-        boundary_functions[i] = &boundary_values_v;
-    }
-
-    VectorTools::interpolate_boundary_values(
-        dof_handler,
-        boundary_functions,
-        boundary_values
-    );
-
-    MatrixTools::apply_boundary_values(
-        boundary_values,
-        matrix_v,
-        solution_v_owned,
-        rhs
-    );
-}
-
-template <unsigned int dim>
-void WaveEquationParallel<dim>::compute_forcing_terms(const double& time)
+void VerletParallel<dim>::compute_forcing_terms(const double& time)
 {
 
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
@@ -424,13 +332,10 @@ void WaveEquationParallel<dim>::compute_forcing_terms(const double& time)
             forcing_term.set_time(time);
             double forcing_term_value_new = forcing_term.value(fe_values.quadrature_point(q));
             
-            forcing_term.set_time(time - time_step);
-            double forcing_term_value_old = forcing_term.value(fe_values.quadrature_point(q));
-
             for(unsigned int i = 0; i < dofs_per_cell; ++i)
             {
                 cell_forcing_terms(i) +=
-                    ( theta * forcing_term_value_new + (1.0 - theta) * forcing_term_value_old) *
+                    forcing_term_value_new  *
                     fe_values.shape_value(i, q) *
                     fe_values.JxW(q); 
             }
@@ -444,32 +349,52 @@ void WaveEquationParallel<dim>::compute_forcing_terms(const double& time)
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::solve_u()
+void VerletParallel<dim>::compute_acceleration(const double& time)
 {
-    SolverControl solver_control(1000, 1e-12 );
-    SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
+    timer.enter_subsection("Forcing Terms");
+    // Compute the forcing term
+    compute_forcing_terms(time);
+    timer.exit_section("Forcing Terms");
 
-    solver.solve(matrix_u, solution_u_owned, rhs, TrilinosWrappers::PreconditionIdentity());
-    pcout << " Solution U\t: " << solver_control.last_step() << " Iterations "<< std::endl;
+    // Compute the right hand side
+    tmp = 0.0;
+    rhs = forcing_terms;
+    laplace_matrix.vmult(tmp, solution_u_owned);
+    rhs -= tmp;
 
+    lhs.copy_from(mass_matrix);
 
-    solution_u = solution_u_owned;
-}
+    // Apply the boundary conditions
+    BoundaryU boundary_values_u;
+    boundary_values_u.set_time(time);
+    std::map<types::global_dof_index, double> boundary_values;
+    for (unsigned int i = 0; i < 4; i++)
+    {
+        VectorTools::interpolate_boundary_values(
+            dof_handler,
+            i,
+            boundary_values_u,
+            boundary_values
+        );
+    }
 
-template <unsigned int dim>
-void WaveEquationParallel<dim>::solve_v()
-{
+    MatrixTools::apply_boundary_values(
+        boundary_values,
+        lhs,
+        a_old_owned,
+        rhs
+    );
+
+    // Solve the linear system
     SolverControl solver_control(1000, 1e-12);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
+    solver.solve(lhs, a_new_owned, rhs, TrilinosWrappers::PreconditionIdentity());
 
-    solver.solve(matrix_v, solution_v_owned, rhs, TrilinosWrappers::PreconditionIdentity());
-    pcout << " Solution V\t: " << solver_control.last_step() << " Iterations "<< std::endl;
-
-    solution_v = solution_v_owned;
+    pcout << " Solution A\t: " << solver_control.last_step() << " Iterations "<< std::endl;
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::output_results() const
+void VerletParallel<dim>::output_results() const
 {
   DataOut<dim> data_out;
   data_out.attach_dof_handler(dof_handler);
@@ -487,11 +412,10 @@ void WaveEquationParallel<dim>::output_results() const
 }
 
 template <unsigned int dim>
-void WaveEquationParallel<dim>::print_timer_data() const
+void VerletParallel<dim>::print_timer_data() const 
 {
     timer.print_wall_time_statistics(MPI_COMM_WORLD);
 }
- 
 
-template class WaveEquationParallel<2>;
-template class WaveEquationParallel<3>;
+template class VerletParallel<2>;
+template class VerletParallel<3>;

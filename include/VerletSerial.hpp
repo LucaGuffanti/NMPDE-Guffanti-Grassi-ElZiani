@@ -1,5 +1,5 @@
-#ifndef WAVE_EQUATION_SERIAL_HPP
-#define WAVE_EQUATION_SERIAL_HPP
+#ifndef VERLET_SERIAL_HPP
+#define VERLET_SERIAL_HPP
 
 
 // ==================== INCLUDES ====================
@@ -46,7 +46,7 @@
 using namespace dealii;
 
 template <unsigned int dim>
-class WaveEquationSerial
+class VerletSerial
 {
 public:
     /**
@@ -59,8 +59,9 @@ public:
     /**
      * @brief Constructs the triangulation, finite element space, DoF handler and linear algebra,
      * utilising deal.ii mesh generation infrastructure.
+     * @param times Number of times the mesh will be refined
      */
-    void setup();
+    void setup(const unsigned int& times);
 
     /**
      * @brief Completes the construction of the problem by assembling objects that do not directly depend
@@ -71,28 +72,23 @@ public:
     /**
      * @brief Constructs the mass matrix and laplace matrix for the problem. 
      * 
-     * @param builtin Whether to use the builtin methods rather then computing the matrices manually.
      */
-    void assemble_matrices(const bool& builtin = false);
+    void assemble_matrices();
 
     /**
-     * @brief Runs the solver by iteratively computing the right hand side of the position equation
-     * (u), solving the first system of equations (u_n+1) with the conjugate gradient method,
-     * computing the right hand side of the velocity equation with the newly produced u_n+1,
-     * and solving it by applying the conjugate gradient method. 
+     * @brief Runs the solver by applying the Verlet integration scheme at each time step
      */
     void run();
 
-    WaveEquationSerial(
+    VerletSerial
+    (
         const unsigned int& degree_,
         const double& interval_,
-        const double& time_step_, 
-        const double& theta_
+        const double& time_step_
     )
     :   degree (degree_)
     ,   interval (interval_)
     ,   time_step (time_step_)
-    ,   theta (theta_)
     {}
 
     /**
@@ -106,7 +102,7 @@ public:
     public:
         InitialU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -124,7 +120,7 @@ public:
     public:
         InitialV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
             return 0.0;
         }
@@ -140,25 +136,9 @@ public:
     public:
         BoundaryU(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
-            //Boundary no setup
-            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            (p[1] > -1. / 3))
-            {
-                return std::sin(10*this->get_time());
-            }
-            else
-                return 0;
-
-            //boundary Setup
-            /*if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            (p[1] < 3. / 4))
-            {   
-                return std::sin(10*this->get_time());
-            }
-            else
-                return 0;*/
+            return 0.0;
         }
 
     };
@@ -173,25 +153,9 @@ public:
     public:
         BoundaryV(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& /*p*/, const unsigned int /*component*/ = 0) const override
         {
-            //Boundary no setup
-            if ((this->get_time() <= 0.5) && (p[0] < 0) && (p[1] < 1. / 3) &&
-            (p[1] > -1. / 3))
-            {
-                return 10*std::cos(10*this->get_time());
-            }
-            else
-                return 0;
-
-            //Boundary setup
-            /*if ((this->get_time() <= 0.5) && (p[0] == 0) && (p[1] > 1. / 4) &&
-            (p[1] < 3. / 4))
-            {
-               return 10*std::cos(10*this->get_time());
-            }
-            else
-                return 0;*/
+            return 0.0;
         }
 
     };
@@ -206,8 +170,10 @@ public:
     public:
         ForcingTerm(){}
 
-        virtual double value(const Point<dim>& p, const unsigned int component = 0) const override
+        virtual double value(const Point<dim>& p, const unsigned int /*component*/ = 0) const override
         {
+            if (this->get_time() <= 0.5 && ((p[0]-0.5)*(p[0]-0.5) + (p[1]-0.5)*(p[1]-0.5)) <= 0.0025)
+                return 3.0;
             return 0;
         }
 
@@ -216,38 +182,21 @@ public:
 protected:
 
     /**
-     * @brief Builds the right hand side of the first equation
-     * 
-     * @param time time of the simulation at the given iteration, used for computing the value of parameters
-     */
-    void assemble_u(const double& time);
-
-    /**
-     * @brief Builds the right hand side of the second equation
-     * 
-     * @param time time of the simulation at the given iteration, used for computing the value of parameters
-     */
-    void assemble_v(const double& time);
- 
-    /**
      * @brief Computes the forcing terms that will be used in the right hand side
      * of the each equation. This function is called once per iteration as the forcing term
      * remains equal, entering the equation effectively scaled by a constant.
      * 
+     * @param time time of the current iteration
      */
-    void compute_forcing_terms(const double& time, const bool& builtin = false);
+    void compute_forcing_terms(const double& time);
 
     /**
-     * @brief Solves the position equation with the conjugate gradient method
+     * @brief Computes the acceleration term for the Verlet algorithm
      * 
+     * @param time time of the current iteration
      */
-    void solve_u();
+    void compute_acceleration(const double& time);
 
-    /**
-     * @brief Solves the velocity equation with the conjugate gradient method
-     * 
-     */
-    void solve_v();
 
     /**
      * @brief Outputs the result of the computation to a file
@@ -263,7 +212,6 @@ protected:
     const unsigned int degree;
     const double interval;
     const double time_step;
-    const double theta;
     double time;
 
     unsigned int time_step_number;
@@ -301,9 +249,8 @@ protected:
     // =========================================
     SparseMatrix<double> mass_matrix;
     SparseMatrix<double> laplace_matrix;
-    SparseMatrix<double> matrix_u;
-    SparseMatrix<double> matrix_v;
-    
+    SparseMatrix<double> lhs;
+
     SparsityPattern sparsity_pattern;
     
     Vector<double> rhs;
@@ -312,12 +259,11 @@ protected:
     Vector<double> old_solution_u;
     Vector<double> old_solution_v;
     Vector<double> forcing_terms;
+    Vector<double> a_old;
+    Vector<double> a_new;
 
     Vector<double> tmp;
 
 };
 
-
-
-
-#endif // WAVE_EQUATION_SERIAL_HPP
+#endif // VERLET_SERIAL_HPP
