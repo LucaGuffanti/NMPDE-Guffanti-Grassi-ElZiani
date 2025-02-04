@@ -235,6 +235,9 @@ void VerletParallel<dim>::run()
     time = 0.0;
 
     output_results();
+    
+    lhs.copy_from(mass_matrix);
+
 
     timer.enter_section("Compute Acceleration");
     compute_acceleration(time);
@@ -362,7 +365,6 @@ void VerletParallel<dim>::compute_acceleration(const double& time)
     laplace_matrix.vmult(tmp, solution_u_owned);
     rhs -= tmp;
 
-    lhs.copy_from(mass_matrix);
 
     // Apply the boundary conditions
     BoundaryU boundary_values_u;
