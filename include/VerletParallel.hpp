@@ -299,6 +299,8 @@ protected:
 
     TimerOutput timer;
 
+    // =========================================
+    std::unique_ptr<TrilinosWrappers::PreconditionBase> preconditioner;
 
     bool customSetup=false;
 };

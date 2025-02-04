@@ -237,6 +237,11 @@ void VerletParallel<dim>::run()
     output_results();
     
     lhs.copy_from(mass_matrix);
+    
+    // Choose and init the preconditioner
+    std::unique_ptr<TrilinosWrappers::PreconditionIdentity> prec = std::make_unique<TrilinosWrappers::PreconditionIdentity>();
+    preconditioner = std::move(prec);
+    // ========================================
 
 
     timer.enter_section("Compute Acceleration");
@@ -390,7 +395,7 @@ void VerletParallel<dim>::compute_acceleration(const double& time)
     // Solve the linear system
     SolverControl solver_control(1000, 1e-12);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
-    solver.solve(lhs, a_new_owned, rhs, TrilinosWrappers::PreconditionIdentity());
+    solver.solve(lhs, a_new_owned, rhs, *preconditioner);
 
     pcout << " Solution A\t: " << solver_control.last_step() << " Iterations "<< std::endl;
 }

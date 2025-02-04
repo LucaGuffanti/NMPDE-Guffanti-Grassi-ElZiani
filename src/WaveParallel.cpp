@@ -246,6 +246,17 @@ void WaveEquationParallel<dim>::run()
     // lhs = M for v
     matrix_v.copy_from(mass_matrix);
 
+    // Choose the preconditioner
+    std::unique_ptr<TrilinosWrappers::PreconditionSSOR> prec_u = std::make_unique<TrilinosWrappers::PreconditionSSOR>();
+    std::unique_ptr<TrilinosWrappers::PreconditionSSOR> prec_v = std::make_unique<TrilinosWrappers::PreconditionSSOR>();
+    prec_u->initialize(matrix_u, 1.0);
+    prec_v->initialize(matrix_v, 1.0);
+
+    preconditioner_u = std::move(prec_u);
+    preconditioner_v = std::move(prec_v);
+
+    // ========================================
+
     timer.exit_section("Init");
     while (time < interval)
     {
@@ -451,7 +462,7 @@ void WaveEquationParallel<dim>::solve_u()
     SolverControl solver_control(1000, 1e-12 );
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
-    solver.solve(matrix_u, solution_u_owned, rhs, TrilinosWrappers::PreconditionIdentity());
+    solver.solve(matrix_u, solution_u_owned, rhs, *preconditioner_u);
     pcout << " Solution U\t: " << solver_control.last_step() << " Iterations "<< std::endl;
 
 
@@ -464,7 +475,7 @@ void WaveEquationParallel<dim>::solve_v()
     SolverControl solver_control(1000, 1e-12);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
-    solver.solve(matrix_v, solution_v_owned, rhs, TrilinosWrappers::PreconditionIdentity());
+    solver.solve(matrix_v, solution_v_owned, rhs, *preconditioner_v);
     pcout << " Solution V\t: " << solver_control.last_step() << " Iterations "<< std::endl;
 
     solution_v = solution_v_owned;

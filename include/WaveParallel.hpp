@@ -325,6 +325,10 @@ protected:
     // =========================================
     ConditionalOStream pcout;
 
+    std::unique_ptr<TrilinosWrappers::PreconditionBase> preconditioner_u;
+    std::unique_ptr<TrilinosWrappers::PreconditionBase> preconditioner_v;
+
+
     TimerOutput timer;
 };
 
