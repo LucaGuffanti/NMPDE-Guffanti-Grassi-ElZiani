@@ -1,15 +1,9 @@
-### Organizing the source code
-Please place all your sources into the `src` folder.
-
-Binary files must not be uploaded to the repository (including executables).
-
-Mesh files should not be uploaded to the repository. If applicable, upload `gmsh` scripts with suitable instructions to generate the meshes (and ideally a Makefile that runs those instructions). If not applicable, consider uploading the meshes to a different file sharing service, and providing a download link as part of the building and running instructions.
-
-### Compiling
+### Compiling and Executing the Code
 To build the executable, make sure you have loaded the needed modules with
 ```bash
 $ module load gcc-glibc dealii
 ```
+You can choose to include some tests in the compilation by modifying the `CMakeLists.txt` file that's present in the root of the repository.
 Then run the following commands:
 ```bash
 $ mkdir build
@@ -17,7 +11,13 @@ $ cd build
 $ cmake ..
 $ make
 ```
-The executable will be created into `build`, and can be executed through
+All the executables will be created in the `build` directory. By default, executables are configured to access the first command line parameter which should
+contain the number of mesh refinement cycles to perform on the standard mesh we use (1x1 square with center at 0.5, 0.5). If no additional input is provided (`argc<2`), then the program will halt and print an error message. To run the code use the following command:
 ```bash
-$ ./executable-name
+$ ./executable <number_of_mesh_refinements>
 ```
+
+Please note that the code supports the use of a mesh from an external input. If necessary, construct the solver objects by passing as a parameter the path to the mesh file, and rebuild the binaries.
+
+### Visualizing the Output
+All outputs will be written in the directory from which the binary is called (generally `build/`). For visualization purposes import the files in ParaView and proceed from there.
