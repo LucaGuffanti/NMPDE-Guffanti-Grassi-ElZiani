@@ -18,7 +18,7 @@ echo "processors,mesh_refinement,dofs,time" > $OUTPUT_FILE_VERLET
 for p in ${PROCESSORS[@]}; do
     for m in ${MESH_REFINEMENT[@]}; do
         echo "Running test with $p processors and $m mesh refinements"
-        mpirun -np $p ./VerletParallel $m > temp
+        mpirun -np $p ./VerletParallel $m > temp 
         cat temp > "verlet_p${p}_m${m}.txt"
 
         # Extract the number of degrees of freedom and the time taken
@@ -27,9 +27,31 @@ for p in ${PROCESSORS[@]}; do
         
         time=$(grep "Total wallclock time elapsed since start" temp | awk -F'|' '{print $3}' | xargs)
         echo "time: $time"
-        # Cancel all outputs
 
         echo "$p,$m,$dofs,$time" >> $OUTPUT_FILE_VERLET
+
+        tail -n 20 temp
+        
+        rm *tu
+    done
+done
+
+touch $OUTPUT_FILE_NATIVE
+echo "processors,mesh_refinement,dofs,time" > $OUTPUT_FILE_NATIVE
+
+for p in ${PROCESSORS[@]}; do
+    for m in ${MESH_REFINEMENT[@]}; do
+        echo "Running test with $p processors and $m mesh refinements"
+        mpirun -np $p ./NativeParallel $m > temp 
+        cat temp > "native_p${p}_m${m}.txt"
+
+        dofs=$(grep "Number of degrees of freedom" temp | awk '{print $NF}')
+        echo "dofs: $dofs"
+        
+        time=$(grep "Total wallclock time elapsed since start" temp | awk -F'|' '{print $3}' | xargs)
+        echo "time: $time"
+
+        echo "$p,$m,$dofs,$time" >> $OUTPUT_FILE_NATIVE
 
         tail -n 20 temp
         
