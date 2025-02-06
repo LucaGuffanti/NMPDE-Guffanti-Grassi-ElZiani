@@ -198,6 +198,14 @@ void WaveEquationSerial<dim>::run()
 
     output_results();
 
+    // lhs = M + delta_t^2 * theta^2 * A for the u equation
+    matrix_u.copy_from(mass_matrix);
+    matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
+
+    // lhs = M for the v equation
+    matrix_v.copy_from(mass_matrix);
+
+
     while (time < interval)
     {
         
@@ -244,9 +252,7 @@ void WaveEquationSerial<dim>::assemble_u(const double& time)
     tmp *= time_step * time_step * theta;
     rhs.add(1.0, tmp);
 
-    // lhs = M + delta_t^2 * theta^2 * A
-    matrix_u.copy_from(mass_matrix);
-    matrix_u.add(time_step * time_step * theta * theta, laplace_matrix);
+    
 
     // Boundary conditions
     BoundaryU boundary_values_u;
@@ -285,8 +291,7 @@ void WaveEquationSerial<dim>::assemble_v(const double& time)
     tmp *= time_step;
     rhs.add(1.0, tmp);
 
-    // lhs = M
-    matrix_v.copy_from(mass_matrix);
+
 
     // Boundary conditions
     BoundaryV boundary_values_v;

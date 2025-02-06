@@ -34,7 +34,6 @@ void VerletParallel<dim>::setup(const std::string &mesh_file)
         pcout << " Building the finite element space..." << std::endl;
         fe = std::make_unique<FE_SimplexP<dim>>(degree);
         pcout << " Degree of polynomials\t: " << fe->degree << std::endl;
-        pcout << " Number of degrees of freedom\t: " << fe->dofs_per_cell << std::endl;        
     }
 
     // Build the quadrature rule. We use Gauss-Lobatto quadratures, so the number of points 
@@ -52,7 +51,7 @@ template <unsigned int dim>
 void VerletParallel<dim>::setup(const unsigned int& times)
 {
     timer.enter_section("Setup");
-    pcout << " WAVESERIAL - GENERATING MESH" << std::endl;
+    pcout << " VerletParallel - GENERATING MESH" << std::endl;
     pcout << " ======================================== " << std::endl;
 
     // Create the mesh. The mesh is created by reading the input file, passed as a parameter
@@ -101,6 +100,7 @@ void VerletParallel<dim>::complete_setup()
 
         locally_owned_dofs = dof_handler.locally_owned_dofs();
         DoFTools::extract_locally_relevant_dofs(dof_handler, locally_relevant_dofs);
+        pcout << " Number of degrees of freedom\t: " << dof_handler.n_dofs() << std::endl;
     }
 
     // Build the linear algebra terms: matrices (via the DynamicSparsityPattern object) and vectors
@@ -235,6 +235,14 @@ void VerletParallel<dim>::run()
     time = 0.0;
 
     output_results();
+    
+    lhs.copy_from(mass_matrix);
+    
+    // Choose and init the preconditioner
+    std::unique_ptr<TrilinosWrappers::PreconditionIdentity> prec = std::make_unique<TrilinosWrappers::PreconditionIdentity>();
+    preconditioner = std::move(prec);
+    // ========================================
+
 
     timer.enter_section("Compute Acceleration");
     compute_acceleration(time);
@@ -362,7 +370,6 @@ void VerletParallel<dim>::compute_acceleration(const double& time)
     laplace_matrix.vmult(tmp, solution_u_owned);
     rhs -= tmp;
 
-    lhs.copy_from(mass_matrix);
 
     // Apply the boundary conditions
     BoundaryU boundary_values_u;
@@ -388,7 +395,7 @@ void VerletParallel<dim>::compute_acceleration(const double& time)
     // Solve the linear system
     SolverControl solver_control(1000, 1e-12);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(solver_control);
-    solver.solve(lhs, a_new_owned, rhs, TrilinosWrappers::PreconditionIdentity());
+    solver.solve(lhs, a_new_owned, rhs, *preconditioner);
 
     pcout << " Solution A\t: " << solver_control.last_step() << " Iterations "<< std::endl;
 }

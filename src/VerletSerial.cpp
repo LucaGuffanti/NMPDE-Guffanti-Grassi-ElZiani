@@ -205,6 +205,9 @@ void VerletSerial<dim>::run()
 
     output_results();
 
+    lhs.copy_from(mass_matrix);
+
+
     compute_acceleration(time);
     a_old = a_new;
 
@@ -309,9 +312,7 @@ void VerletSerial<dim>::compute_acceleration(const double& time)
     laplace_matrix.vmult(tmp, solution_u);
     rhs -= tmp;
 
-    // apply the domain
 
-    lhs.copy_from(mass_matrix);
     BoundaryU boundary_values_u;
     boundary_values_u.set_time(time);
     std::map<types::global_dof_index, double> boundary_values;

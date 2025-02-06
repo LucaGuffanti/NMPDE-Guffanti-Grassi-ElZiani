@@ -180,7 +180,7 @@ public:
         virtual double value(const Point<dim>& p, const unsigned int /*component*/ = 0) const override
         {
             if (this->get_time() <= 0.5 && ((p[0]-0.5)*(p[0]-0.5) + (p[1]-0.5)*(p[1]-0.5)) <= 0.0025)
-                return 3.0;
+                return 1.0;
             return 0;
         }
     };
@@ -299,6 +299,8 @@ protected:
 
     TimerOutput timer;
 
+    // =========================================
+    std::unique_ptr<TrilinosWrappers::PreconditionBase> preconditioner;
 
     bool customSetup=false;
 };
