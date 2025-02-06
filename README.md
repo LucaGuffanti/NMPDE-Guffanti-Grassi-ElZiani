@@ -1,4 +1,7 @@
 ### Compiling and Executing the Code
+> [!CAUTION]
+> The project is implemented with deal.II 9.3.1, make sure to have the 2022 mk modules installed.
+
 To build the executable, make sure you have loaded the needed modules with
 ```bash
 $ module load gcc-glibc dealii
